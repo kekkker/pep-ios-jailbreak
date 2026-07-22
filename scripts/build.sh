@@ -41,6 +41,7 @@ xcodebuild \
     DEVELOPMENT_TEAM= \
     ONLY_ACTIVE_ARCH=NO \
     ARCHS=arm64 \
+    ENABLE_MODULE_VERIFIER=NO \
     build | tee "$artifacts/xcodebuild.log"
 
 app=$(find "$derived_data/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)
