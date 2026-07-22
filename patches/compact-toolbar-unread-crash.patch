@@ -1,0 +1,125 @@
+diff --git a/pEpForiOS/UI/EmailDisplay/EmailDetailView/EmailDetailViewModel.swift b/pEpForiOS/UI/EmailDisplay/EmailDetailView/EmailDetailViewModel.swift
+index 814e7c1f4..e5c0c1abe 100644
+--- a/pEpForiOS/UI/EmailDisplay/EmailDetailView/EmailDetailViewModel.swift
++++ b/pEpForiOS/UI/EmailDisplay/EmailDetailView/EmailDetailViewModel.swift
+@@ -120,8 +120,8 @@ class EmailDetailViewModel: EmailDisplayViewModel {
+             // Nothing to do
+             return nil
+         }
+-        for i in 0..<messageQueryResults.all.count {
+-            let testee = messageQueryResults[i]
++        let messages = messageQueryResults.all
++        for (i, testee) in messages.enumerated() {
+             if testee == messageShownBeforeUpdating {
+                 return IndexPath(item: i, section: 0)
+             }
+diff --git a/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewController.swift b/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewController.swift
+index 2142770a1..ae2772c7d 100644
+--- a/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewController.swift
++++ b/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewController.swift
+@@ -44,6 +44,26 @@ final class EmailListViewController: UIViewController {
+                                                    target: nil,
+                                                    action: nil)
+ 
++    /// A compact replacement for the navigation controller's full-width bottom toolbar.
++    /// It floats over the message list so content remains visible on either side.
++    private lazy var compactToolbar: UIToolbar = {
++        let toolbar = UIToolbar(frame: .zero)
++        toolbar.translatesAutoresizingMaskIntoConstraints = false
++        toolbar.layer.cornerRadius = 22.0
++        toolbar.layer.masksToBounds = true
++        toolbar.barTintColor = .pEpGreen
++        toolbar.tintColor = .white
++        view.addSubview(toolbar)
++        NSLayoutConstraint.activate([
++            toolbar.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
++            toolbar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
++                                            constant: -8.0),
++            toolbar.widthAnchor.constraint(equalToConstant: 184.0),
++            toolbar.heightAnchor.constraint(equalToConstant: 44.0)
++        ])
++        return toolbar
++    }()
++
+     public var viewModel: EmailListViewModel? {
+         didSet {
+             viewModel?.delegate = self
+@@ -102,7 +122,7 @@ final class EmailListViewController: UIViewController {
+ 
+     override func viewWillAppear(_ animated: Bool) {
+         super.viewWillAppear(animated)
+-        navigationController?.setToolbarHidden(false, animated: true)
++        showStandardToolbar()
+         if MiscUtil.isUnitTest() {
+             return
+         }
+@@ -312,6 +332,9 @@ final class EmailListViewController: UIViewController {
+     }
+ 
+     private func showEditToolbar() {
++        compactToolbar.isHidden = true
++        navigationController?.setToolbarHidden(false, animated: true)
++
+         func getButtonItem(img: UIImage?, action: Selector) -> UIBarButtonItem {
+             let button = UIBarButtonItem(image: img, style: .plain, target: self, action: action)
+             button.isEnabled = false
+@@ -450,6 +473,9 @@ final class EmailListViewController: UIViewController {
+ 
+     //recover the original toolbar and right button
+     private func showStandardToolbar() {
++        navigationController?.setToolbarHidden(true, animated: true)
++        compactToolbar.isHidden = false
++
+         let flexibleSpace = createFlexibleBarButtonItem()
+ 
+         enableFilterButton = UIBarButtonItem.getFilterOnOffButton(action: #selector(filterButtonPressed),
+@@ -464,13 +490,13 @@ final class EmailListViewController: UIViewController {
+             // User cannot display another drafts preview from drafts preview
+             let composeBtn = UIBarButtonItem.getComposeButton(tapAction: #selector(showCompose),
+                                                               target: self)
+-            toolbarItems = [flexibleSpace, composeBtn, flexibleSpace]
++            compactToolbar.items = [flexibleSpace, composeBtn, flexibleSpace]
+             navigationItem.rightBarButtonItem = dismissButton
+         } else {
+             let composeBtn = UIBarButtonItem.getComposeButton(tapAction: #selector(showCompose),
+                                                               longPressAction: #selector(draftsPreviewTapped),
+                                                               target: self)
+-            toolbarItems = [enableFilterButton, flexibleSpace, composeBtn, flexibleSpace, settingsBarButton]
++            compactToolbar.items = [enableFilterButton, flexibleSpace, composeBtn, flexibleSpace, settingsBarButton]
+             navigationItem.rightBarButtonItem = editButton
+         }
+     }
+@@ -520,11 +546,11 @@ final class EmailListViewController: UIViewController {
+         vm.isFilterEnabled = !vm.isFilterEnabled
+         if vm.isFilterEnabled {
+             let flexibleSpace = createFlexibleBarButtonItem()
+-            toolbarItems?.insert(textFilterButton, at: 1)
+-            toolbarItems?.insert(flexibleSpace, at: 1)
++            compactToolbar.items?.insert(textFilterButton, at: 1)
++            compactToolbar.items?.insert(flexibleSpace, at: 1)
+         } else {
+-            toolbarItems?.remove(at: 1)
+-            toolbarItems?.remove(at: 1)
++            compactToolbar.items?.remove(at: 1)
++            compactToolbar.items?.remove(at: 1)
+         }
+         updateFilterButton()
+     }
+diff --git a/pEpForiOS/UI/EmailDisplay/ViewModel/EmailDisplayViewModel.swift b/pEpForiOS/UI/EmailDisplay/ViewModel/EmailDisplayViewModel.swift
+index a93fc5129..43faa369e 100644
+--- a/pEpForiOS/UI/EmailDisplay/ViewModel/EmailDisplayViewModel.swift
++++ b/pEpForiOS/UI/EmailDisplay/ViewModel/EmailDisplayViewModel.swift
+@@ -90,7 +90,12 @@ class EmailDisplayViewModel {
+     /// - returns:  `nil` if `indexPath` is out of the current queryResults bounds, otherwize the
+     ///             Message represented by the given `indexPath`?.
+     public func message(representedByRowAt indexPath: IndexPath) -> Message? {
+-        return messageQueryResults[indexPath.row]
++        let messages = messageQueryResults.all
++        guard indexPath.section == 0, messages.indices.contains(indexPath.row) else {
++            Log.shared.warn("Ignoring stale message index path: %@", indexPath.description)
++            return nil
++        }
++        return messages[indexPath.row]
+     }
+ 
+     /// - Parameter indexPath: indexPath of message to configure ReplyAllPossibleChecker with
