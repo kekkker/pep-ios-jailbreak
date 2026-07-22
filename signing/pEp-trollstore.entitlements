@@ -2,6 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- TrollStore only supplies these Xcode-style fallback identity entitlements
+	     when an executable has no entitlements at all. Because pEp needs a custom
+	     app group, keep the fallback identity explicitly so system services such
+	     as BGTaskScheduler can associate requests with the installed app. -->
+	<key>application-identifier</key>
+	<string>TROLLTROLL.*</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>TROLLTROLL</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>TROLLTROLL.*</string>
+		<string>com.apple.token</string>
+	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.software.pEp</string>
