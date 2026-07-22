@@ -31,15 +31,38 @@ jobs:
         run: |
           zig_version=0.15.2
           zig_archive="zig-aarch64-macos-${zig_version}.tar.xz"
+          zig_root="$PWD/zig-aarch64-macos-${zig_version}"
           zig_url="https://ziglang.org/download/${zig_version}/${zig_archive}"
           expected=$(curl -fsSL https://ziglang.org/download/index.json | jq -r ".\"${zig_version}\".\"aarch64-macos\".shasum")
           curl -fsSLO "$zig_url"
           echo "${expected}  ${zig_archive}" | shasum -a 256 -c -
           tar -xf "$zig_archive"
-          echo "$PWD/zig-aarch64-macos-${zig_version}" >> "$GITHUB_PATH"
+          macos_major=$(sw_vers -productVersion | cut -d. -f1)
+          macos_sdk=$(xcrun --sdk macosx --show-sdk-path)
+          cp "$macos_sdk/usr/lib/libSystem.tbd" \
+            "$zig_root/lib/libc/darwin/libSystem.${macos_major}.tbd"
+          echo "$zig_root" >> "$GITHUB_PATH"
 
       - name: Cache Rust build tools
+        id: cargo-cache
         uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/cargo-capi
+            ~/.cargo/bin/cargo-cbuild
+            ~/.cargo/bin/cargo-cinstall
+            ~/.cargo/bin/cargo-ctest
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-c-${{ runner.os }}-${{ runner.arch }}-0.10.24
+
+      - name: Install cargo-c
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-c
+
+      - name: Save Rust build tools
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
         with:
           path: |
             ~/.cargo/bin/cargo-capi
