@@ -25,7 +25,7 @@ jobs:
       - name: Install build prerequisites
         run: |
           brew install asn1c autoconf automake libtool gnu-sed wget ninja zig xcodegen jq
-          python3 -m pip install --user lxml
+          python3 -m pip install --user --break-system-packages lxml
 
       - name: Clone pinned upstream sources and apply compatibility patches
         run: scripts/bootstrap.sh
