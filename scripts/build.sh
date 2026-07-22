@@ -8,7 +8,11 @@ artifacts="$repo_root/artifacts"
 
 export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:/opt/homebrew/opt/libtool/libexec/gnubin:$PATH"
 
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
+rustup target add \
+    aarch64-apple-ios \
+    aarch64-apple-ios-sim \
+    aarch64-apple-darwin \
+    x86_64-apple-darwin
 if ! command -v cargo-cbuild >/dev/null; then
     cargo install cargo-c
 fi

@@ -77,8 +77,24 @@ jobs:
       - name: Clone pinned upstream sources and apply compatibility patches
         run: scripts/bootstrap.sh
 
+      - name: Restore pEp Rust build outputs
+        id: pep-rust-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: work/pEpForiOS.XCFrameworks/pEpEngineSequoiaBackend/target
+          key: pep-rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/pEpEngineSequoiaBackend/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            pep-rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/pEpEngineSequoiaBackend/Cargo.lock') }}-
+
       - name: Build dependencies and application
         run: scripts/build.sh
+
+      - name: Save pEp Rust build outputs
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: work/pEpForiOS.XCFrameworks/pEpEngineSequoiaBackend/target
+          key: ${{ steps.pep-rust-cache.outputs.cache-primary-key }}
 
       - name: Upload IPA
         if: success()
