@@ -10,7 +10,7 @@ index c4a531d..008394b 100644
 -        // (was calling `email.isProbablyValidEmail` and reporting
 -        // `LoginViewController.LoginError.invalidEmail` in case).
 +        guard email.isProbablyValidEmail() else {
-+            handleLoginError(error: LoginViewController.LoginError.invalidEmail,
++            handleLoginError(error: LoginViewController.LoginError.missingEmail,
 +                             offerManualSetup: false)
 +            return
 +        }
