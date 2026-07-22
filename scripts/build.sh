@@ -50,13 +50,19 @@ if [[ -z "$app" ]]; then
     exit 1
 fi
 
+# TrollStore preserves entitlements already present on an ldid-fakesigned
+# executable. The application stores its Core Data database in this app-group
+# container and aborts at launch when the entitlement is absent.
+ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
+    "$app/$(defaults read "$app/Info" CFBundleExecutable)"
+
 mkdir -p "$artifacts/Payload"
 cp -R "$app" "$artifacts/Payload/"
 (
     cd "$artifacts"
-    ditto -c -k --sequesterRsrc --keepParent Payload pEp-iOS16-unsigned.ipa
+    ditto -c -k --sequesterRsrc --keepParent Payload pEp-iOS16-trollstore.ipa
 )
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
-ls -lh "$artifacts/pEp-iOS16-unsigned.ipa"
+ls -lh "$artifacts/pEp-iOS16-trollstore.ipa"

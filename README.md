@@ -1,8 +1,8 @@
 # pEp for jailbroken iOS 16
 
 This repository builds the GPLv3 `pEpForiOS` client from the official pEp
-Codeberg sources. It is intended to produce an unsigned arm64 IPA for devices
-where the owner supplies their own signing or jailbreak installation method.
+Codeberg sources. It produces an arm64 IPA fakesigned with the app-group
+entitlement required by pEp, ready for installation with TrollStore.
 
 The upstream application is currently unavailable from the App Store. Its
 public build also references a private configuration-only framework. This
@@ -15,8 +15,8 @@ stored here.
 
 ## Build
 
-Run the `Build unsigned IPA` GitHub Actions workflow. Successful builds upload
-`pEp-iOS16-unsigned.ipa` as an artifact.
+Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
+`pEp-iOS16-trollstore.ipa` as an artifact.
 
 ## License
 

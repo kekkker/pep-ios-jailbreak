@@ -1,4 +1,4 @@
-name: Build unsigned IPA
+name: Build TrollStore IPA
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
 
       - name: Install build prerequisites
         run: |
-          brew install autoconf automake libtool gnu-sed wget ninja xcodegen jq
+          brew install autoconf automake libtool gnu-sed wget ninja xcodegen jq ldid
           python3 -m pip install --user --break-system-packages lxml
 
       - name: Install pEp-compatible asn1c
@@ -131,8 +131,8 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v6
         with:
-          name: pEp-iOS16-unsigned
-          path: artifacts/pEp-iOS16-unsigned.ipa
+          name: pEp-iOS16-trollstore
+          path: artifacts/pEp-iOS16-trollstore.ipa
           if-no-files-found: error
 
       - name: Upload diagnostic log
