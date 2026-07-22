@@ -38,4 +38,9 @@ perl -pi -e 's/"iphoneos18\.5"/"iphoneos"/g; s/"iphonesimulator18\.5"/"iphonesim
 perl -pi -e 's/const Platforms = \[_\]Platform\{ \.macosx, \.iphoneos, \.iphonesimulator \};/const Platforms = [_]Platform{ .iphoneos };/; s/const Archs = \[_\]Arch\{ \.arm64, \.x86_64 \};/const Archs = [_]Arch{ .arm64 };/;' \
     "$work_root/pEpForiOS.XCFrameworks/src/build.zig"
 
+# Autoconf 2.72 selects C23 by default, but libetpan still contains valid
+# K&R-style definitions that C23 removed. Keep this legacy dependency on C17.
+perl -pi -e 's/^AC_PROG_CC$/AC_PROG_CC\nCC="\$CC -std=gnu17"/' \
+    "$work_root/pEpForiOS.XCFrameworks/libetpan/configure.ac"
+
 echo "Bootstrap complete: $work_root"

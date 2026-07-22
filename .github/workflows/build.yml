@@ -86,6 +86,17 @@ jobs:
           restore-keys: |
             pep-rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/pEpEngineSequoiaBackend/Cargo.lock') }}-
 
+      - name: Restore completed native libraries
+        id: pep-native-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            work/pEpForiOS.XCFrameworks/prefix
+            work/pEpForiOS.XCFrameworks/Frameworks
+          key: pep-native-ios-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/.submodules.json') }}-${{ github.run_id }}
+          restore-keys: |
+            pep-native-ios-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/.submodules.json') }}-
+
       - name: Build dependencies and application
         run: scripts/build.sh
 
@@ -95,6 +106,15 @@ jobs:
         with:
           path: work/pEpForiOS.XCFrameworks/pEpEngineSequoiaBackend/target
           key: ${{ steps.pep-rust-cache.outputs.cache-primary-key }}
+
+      - name: Save completed native libraries
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            work/pEpForiOS.XCFrameworks/prefix
+            work/pEpForiOS.XCFrameworks/Frameworks
+          key: ${{ steps.pep-native-cache.outputs.cache-primary-key }}
 
       - name: Upload IPA
         if: success()
