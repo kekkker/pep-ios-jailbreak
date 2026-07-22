@@ -1,8 +1,8 @@
-diff --git a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift
-index 671382bc8..bc32d330d 100644
---- a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift
-+++ b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift
-@@ -363,10 +363,23 @@ extension PersistentImapFolder: CWIMAPCache {
+diff --git a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift
+index 0802f8afd..ef029b249 100644
+--- a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift
++++ b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift
+@@ -364,10 +364,23 @@ extension CoreDataPantomimeAdapter: CWIMAPCache {
                      Log.shared.errorAndCrash("Need an existing account")
                      return
              }
