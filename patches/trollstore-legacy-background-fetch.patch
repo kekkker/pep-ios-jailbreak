@@ -1,0 +1,124 @@
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+index 9a5540c54..f8338261d 100644
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -88,30 +88,16 @@ extension AppDelegate {
+ 
+         UNUserNotificationCenter.current().delegate = self
+ 
+-        if #available(iOS 13.0, *) {
+-            let taskIdentifier = Constants.appRefreshTaskBackgroundtaskBackgroundfetchSchedulerid
+-            let didRegister = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskIdentifier,
+-                                                              using: nil) { [weak self] task in
+-                guard let me = self else {
+-                    Log.shared.errorAndCrash("BGAppRefreshTask: Lost myself")
+-                    return
+-                }
+-                me.handleAppRefreshTask(task as! BGAppRefreshTask)
+-            }
+-            Log.shared.warn("BGAppRefreshTask: registration %@ for %@",
+-                            didRegister ? "succeeded" : "FAILED",
+-                            taskIdentifier)
+-        } else {
+-            Log.shared.info("BGAppRefreshTask: we are < iOS13. Fallback to BackgroundFetch ...")
+-            application.setMinimumBackgroundFetchInterval(60.0 * 2)
+-        }
++        // BGTaskScheduler silently discards requests from TrollStore-fakesigned apps on iOS 16.
++        // Use the legacy fetch API, which remains supported when the permitted-identifiers key is
++        // absent from Info.plist. The system still decides the actual delivery time.
++        application.setMinimumBackgroundFetchInterval(UIApplication.backgroundFetchIntervalMinimum)
++        Log.shared.warn("BackgroundFetch: enabled; status=%@",
++                        backgroundRefreshStatusDescription)
+ 
+         Appearance.setup()
+         setupServices()
+         askUserForNotificationPermissions()
+-        if #available(iOS 13.0, *) {
+-            scheduleAppRefresh(reason: "application launch")
+-        }
+         var result = setupInitialViewController()
+ 
+         if let openedToOpenFile = launchOptions?[UIApplication.LaunchOptionsKey.url] as? URL {
+@@ -149,9 +135,6 @@ extension AppDelegate {
+         messageModelService?.finish()
+         // Make sure we do not permanently disable auto locking
+         UIApplication.shared.enableAutoLockingDevice()
+-        if #available(iOS 13.0, *) {
+-            scheduleAppRefresh(reason: "entered background")
+-        }
+     }
+ 
+     /// Called as part of the transition from the background to the inactive state; here you can
+@@ -185,39 +168,27 @@ extension AppDelegate {
+ 
+     func application(_ application: UIApplication, performFetchWithCompletionHandler
+                         completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+-        if #available(iOS 13.0, *) {
+-            // According to Apple docs:
+-            //
+-            // "Adding a BGTaskSchedulerPermittedIdentifiers key to the
+-            // Info.plist disables application(_:performFetchWithCompletionHandler:) and
+-            // setMinimumBackgroundFetchInterval(_:) in iOS 13 and later."
+-            //
+-            // This method is called anyway by the OS. Which is a contradiction imo.
+-            Log.shared.warn("BGAppRefreshTask: Should not be called on iOS>=13. Should use BGTaskScheduler defined method instead")
+-            // Do nothing. We use different API (BGTaskScheduler) for iOS13 and up.
++        Log.shared.warn("BackgroundFetch: started by iOS")
++        guard let messageModelService = messageModelService else {
++            Log.shared.error("BackgroundFetch: no message model service")
+             completionHandler(.failed)
+-        } else {
+-            Log.shared.info("BGAppRefreshTask: we are < iOS13. Fallback to BackgroundFetch ...")
+-            guard let messageModelService = messageModelService else {
+-                Log.shared.error("no networkService")
++            return
++        }
++
++        messageModelService.checkForNewMails_old() { [weak self] numMails in
++            guard let self = self, let numMails = numMails else {
++                Log.shared.warn("BackgroundFetch: mail check failed")
+                 completionHandler(.failed)
+                 return
+             }
+-
+-            messageModelService.checkForNewMails_old() {[unowned self] (numMails: Int?) in
+-                var result = UIBackgroundFetchResult.failed
+-                defer { completionHandler(result)}
+-                guard let numMails = numMails else {
+-                    result = .failed
+-                    return
+-                }
+-                switch numMails {
+-                case 0:
+-                    result = .noData
+-                default:
+-                    self.informUser(numNewMails: numMails) {
+-                        result = .newData
+-                    }
++            if numMails == 0 {
++                Log.shared.warn("BackgroundFetch: completed with no new mail")
++                completionHandler(.noData)
++            } else {
++                self.informUser(numNewMails: numMails) {
++                    Log.shared.warn("BackgroundFetch: delivered notification for %d new messages",
++                                    numMails)
++                    completionHandler(.newData)
+                 }
+             }
+         }
+diff --git a/pEpForiOS/Info.plist b/pEpForiOS/Info.plist
+index bb78d2fff..93c07bf0f 100644
+--- a/pEpForiOS/Info.plist
++++ b/pEpForiOS/Info.plist
+@@ -2,10 +2,6 @@
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+-	<key>BGTaskSchedulerPermittedIdentifiers</key>
+-	<array>
+-		<string>software.pEp.mail.background-refresh</string>
+-	</array>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>en_US</string>
+ 	<key>CFBundleDisplayName</key>
+
