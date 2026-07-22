@@ -33,4 +33,9 @@ perl -pi -e 's/IPHONEOS_DEPLOYMENT_TARGET = 18\.5;/IPHONEOS_DEPLOYMENT_TARGET = 
 perl -pi -e 's/"iphoneos18\.5"/"iphoneos"/g; s/"iphonesimulator18\.5"/"iphonesimulator"/g; s/"macosx26\.2"/"macosx"/g' \
     "$work_root/pEpForiOS.XCFrameworks/src/platform.zig"
 
+# This pipeline produces a device-only IPA. Building simulator and universal
+# macOS slices triples the native work and is unnecessary for an iphoneos app.
+perl -pi -e 's/const Platforms = \[_\]Platform\{ \.macosx, \.iphoneos, \.iphonesimulator \};/const Platforms = [_]Platform{ .iphoneos };/; s/const Archs = \[_\]Arch\{ \.arm64, \.x86_64 \};/const Archs = [_]Arch{ .arm64 };/;' \
+    "$work_root/pEpForiOS.XCFrameworks/src/build.zig"
+
 echo "Bootstrap complete: $work_root"
