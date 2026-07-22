@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v6
@@ -30,20 +30,19 @@ jobs:
       - name: Install upstream-compatible Zig
         run: |
           zig_version=0.15.2
-          zig_archive="zig-aarch64-macos-${zig_version}.tar.xz"
-          zig_root="$PWD/zig-aarch64-macos-${zig_version}"
+          case "$(uname -m)" in
+            arm64) zig_arch=aarch64 ;;
+            x86_64) zig_arch=x86_64 ;;
+            *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          zig_archive="zig-${zig_arch}-macos-${zig_version}.tar.xz"
+          zig_root="$PWD/zig-${zig_arch}-macos-${zig_version}"
           zig_url="https://ziglang.org/download/${zig_version}/${zig_archive}"
-          expected=$(curl -fsSL https://ziglang.org/download/index.json | jq -r ".\"${zig_version}\".\"aarch64-macos\".shasum")
+          expected=$(curl -fsSL https://ziglang.org/download/index.json | jq -r ".\"${zig_version}\".\"${zig_arch}-macos\".shasum")
           curl -fsSLO "$zig_url"
           echo "${expected}  ${zig_archive}" | shasum -a 256 -c -
           tar -xf "$zig_archive"
-          macos_sdk=$(xcrun --sdk macosx --show-sdk-path)
-          zig_host_sysroot="$zig_root/macos-host-sdk"
-          mkdir -p "$zig_host_sysroot/usr/lib" "$zig_host_sysroot/System/Library/Frameworks"
-          cp "$zig_root/lib/libc/darwin/libSystem.tbd" "$zig_host_sysroot/usr/lib/libSystem.tbd"
-          cp "$macos_sdk/SDKSettings.json" "$zig_host_sysroot/SDKSettings.json"
           echo "$zig_root" >> "$GITHUB_PATH"
-          echo "PEP_ZIG_HOST_SYSROOT=$zig_host_sysroot" >> "$GITHUB_ENV"
 
       - name: Cache Rust build tools
         id: cargo-cache
