@@ -43,4 +43,9 @@ perl -pi -e 's/const Platforms = \[_\]Platform\{ \.macosx, \.iphoneos, \.iphones
 perl -pi -e 's/^AC_PROG_CC$/AC_PROG_CC\nCC="\$CC -std=gnu17"/' \
     "$work_root/pEpForiOS.XCFrameworks/libetpan/configure.ac"
 
+# asn1c 0.9.29 renamed its generated sample from converter-sample.c to
+# converter-example.c. Neither belongs in the engine's static ASN.1 library.
+perl -pi -e 's/rm -f converter-sample\.c/rm -f converter-sample.c converter-example.c/g' \
+    "$work_root/pEpForiOS.XCFrameworks/pEpEngine/asn.1/Makefile"
+
 echo "Bootstrap complete: $work_root"
