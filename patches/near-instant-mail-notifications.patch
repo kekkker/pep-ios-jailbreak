@@ -1,0 +1,119 @@
+diff --git a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift
+index 671382bc8..bc32d330d 100644
+--- a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift
++++ b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/PersistentImapFolder.swift
+@@ -363,10 +363,23 @@ extension PersistentImapFolder: CWIMAPCache {
+                     Log.shared.errorAndCrash("Need an existing account")
+                     return
+             }
++            // Only a previously unseen UID above the Inbox high-water mark is a newly
++            // delivered message. This excludes flag updates, message re-downloads and
++            // older messages fetched while the user scrolls through their mailbox.
++            let previousHighestUID = me.cdFolder.lastUID(context: me.privateMOC)
++            let isNewInboxMessage = me.cdFolder.folderType == .inbox &&
++                previousHighestUID > 0 &&
++                message.uid() > previousHighestUID &&
++                me.cdMessage(withUID: message.uid()) == nil
+             CdMessage.insertOrUpdate(pantomimeMessage: message,
+                                      account: cdAccount,
+                                      messageUpdate: messageUpdate,
+                                      context: me.privateMOC)
++            if isNewInboxMessage {
++                NotificationCenter.default.post(
++                    name: Notification.Name("pEpNewInboxMessagePersisted"),
++                    object: nil)
++            }
+         }
+     }
+ }
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+index aa53bc113..6b9b68f76 100644
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -16,6 +16,10 @@ import pEp4iosIntern
+ class AppDelegate: UIResponder, UIApplicationDelegate {
+     var window: UIWindow?
+ 
++    private var newMailObserver: NSObjectProtocol?
++    private var pendingNewMailCount = 0
++    private var newMailNotificationWorkItem: DispatchWorkItem?
++
+     /// The model
+     private var messageModelService: MessageModelServiceProtocol?
+ 
+@@ -103,6 +107,7 @@ extension AppDelegate {
+         Appearance.setup()
+         setupServices()
+         askUserForNotificationPermissions()
++        observePersistedInboxMessages()
+         var result = setupInitialViewController()
+ 
+         if let openedToOpenFile = launchOptions?[UIApplication.LaunchOptionsKey.url] as? URL {
+@@ -287,6 +292,34 @@ extension AppDelegate {
+ // MARK: - User Notifiation
+ 
+ extension AppDelegate {
++    private func observePersistedInboxMessages() {
++        newMailObserver = NotificationCenter.default.addObserver(
++            forName: Notification.Name("pEpNewInboxMessagePersisted"),
++            object: nil,
++            queue: .main) { [weak self] _ in
++                self?.queueNewMailNotification()
++            }
++    }
++
++    private func queueNewMailNotification() {
++        pendingNewMailCount += 1
++        newMailNotificationWorkItem?.cancel()
++
++        let workItem = DispatchWorkItem { [weak self] in
++            guard let me = self else {
++                return
++            }
++            let count = me.pendingNewMailCount
++            me.pendingNewMailCount = 0
++            me.newMailNotificationWorkItem = nil
++            UserNotificationTool.postUserNotification(forIncomingMails: count)
++            Log.shared.warn("Notifications: delivered for %d newly persisted Inbox message(s)",
++                            count)
++        }
++        newMailNotificationWorkItem = workItem
++        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: workItem)
++    }
++
+     private func informUser(numNewMails:Int, completion: @escaping ()->()) {
+         GCD.onMain {
+             UserNotificationTool.postUserNotification(forNumNewMails: numNewMails)
+diff --git a/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift b/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift
+index c155f629e..d4c0d7204 100644
+--- a/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift
++++ b/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift
+@@ -11,6 +11,28 @@ import Foundation
+ /// pEp 4 iOS specific Extensions
+ extension UserNotificationTool {
+ 
++    static func postUserNotification(forIncomingMails numMails: Int) {
++        guard numMails > 0 else {
++            return
++        }
++        let title: String
++        if numMails == 1 {
++            title = NSLocalizedString("New message received",
++                                      comment:
++                "Title for notification show on lock screen for *one* new mail")
++        } else {
++            title = String(format: NSLocalizedString("%1d new messages received",
++                                                     comment:
++                "Title for notification show on lock screen for new mails"),
++                           numMails)
++        }
++        let body = NSLocalizedString("Slide for more",
++                                     comment:
++            "Body for notifications show on lock screen for new mail(s)")
++        let currentBadge = max(0, UIApplication.shared.applicationIconBadgeNumber)
++        post(title: title, body: body, batch: currentBadge + numMails)
++    }
++
+     static func postUserNotification(forNumNewMails numMails: Int) {
+         if numMails ==  UIApplication.shared.applicationIconBadgeNumber {
+             // The number of new mails did not increase since informing the user last time.
