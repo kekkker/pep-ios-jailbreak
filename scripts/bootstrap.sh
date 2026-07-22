@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+work_root="$repo_root/work"
+
+rm -rf "$work_root"
+mkdir -p "$work_root"
+
+git clone --filter=blob:none https://codeberg.org/pEp/pEpForiOS-build.git "$work_root/pEpForiOS-build"
+
+"$repo_root/scripts/clone-pinned.sh" \
+    "$work_root/pEpForiOS-build/.submodules.json" \
+    "$work_root"
+
+"$repo_root/scripts/clone-pinned.sh" \
+    "$work_root/pEpForiOS.XCFrameworks/.submodules.json" \
+    "$work_root/pEpForiOS.XCFrameworks"
+
+mkdir -p "$work_root/pEpForiOS-intern/pEp4iosIntern"
+cp -R "$repo_root/shim/pEp4iosIntern/." "$work_root/pEpForiOS-intern/pEp4iosIntern/"
+cp "$repo_root/shim/secret.xcconfig" "$work_root/pEpForiOS-intern/secret.xcconfig"
+xcodegen generate \
+    --spec "$work_root/pEpForiOS-intern/pEp4iosIntern/project.yml" \
+    --project "$work_root/pEpForiOS-intern/pEp4iosIntern"
+
+# Current upstream raised only the app target to iOS 18.5. Its dependency
+# builder still targets iOS 12. Lower all explicit app/test targets to iOS 16.
+perl -pi -e 's/IPHONEOS_DEPLOYMENT_TARGET = 18\.5;/IPHONEOS_DEPLOYMENT_TARGET = 16.0;/g' \
+    "$work_root/pEpForiOS/pEpForiOS.xcodeproj/project.pbxproj"
+
+# Use the SDK selected by xcrun instead of requiring copied Xcode 14 SDKs.
+perl -pi -e 's/"iphoneos18\.5"/"iphoneos"/g; s/"iphonesimulator18\.5"/"iphonesimulator"/g; s/"macosx26\.2"/"macosx"/g' \
+    "$work_root/pEpForiOS.XCFrameworks/src/platform.zig"
+
+echo "Bootstrap complete: $work_root"

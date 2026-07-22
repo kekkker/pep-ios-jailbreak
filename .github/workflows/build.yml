@@ -1,0 +1,50 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Toolchain information
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks
+          df -h .
+
+      - name: Install build prerequisites
+        run: |
+          brew install asn1c autoconf automake libtool gnu-sed wget ninja zig xcodegen jq
+          python3 -m pip install --user lxml
+
+      - name: Clone pinned upstream sources and apply compatibility patches
+        run: scripts/bootstrap.sh
+
+      - name: Build dependencies and application
+        run: scripts/build.sh
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pEp-iOS16-unsigned
+          path: artifacts/pEp-iOS16-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pEp-build-log
+          path: artifacts/xcodebuild.log
+          if-no-files-found: ignore

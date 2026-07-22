@@ -1,0 +1,5 @@
+work/
+DerivedData/
+artifacts/
+*.log
+.DS_Store
