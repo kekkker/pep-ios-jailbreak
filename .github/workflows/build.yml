@@ -24,8 +24,31 @@ jobs:
 
       - name: Install build prerequisites
         run: |
-          brew install asn1c autoconf automake libtool gnu-sed wget ninja zig xcodegen jq
+          brew install asn1c autoconf automake libtool gnu-sed wget ninja xcodegen jq
           python3 -m pip install --user --break-system-packages lxml
+
+      - name: Install upstream-compatible Zig
+        run: |
+          zig_version=0.15.2
+          zig_archive="zig-aarch64-macos-${zig_version}.tar.xz"
+          zig_url="https://ziglang.org/download/${zig_version}/${zig_archive}"
+          expected=$(curl -fsSL https://ziglang.org/download/index.json | jq -r ".\"${zig_version}\".\"aarch64-macos\".shasum")
+          curl -fsSLO "$zig_url"
+          echo "${expected}  ${zig_archive}" | shasum -a 256 -c -
+          tar -xf "$zig_archive"
+          echo "$PWD/zig-aarch64-macos-${zig_version}" >> "$GITHUB_PATH"
+
+      - name: Cache Rust build tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/cargo-capi
+            ~/.cargo/bin/cargo-cbuild
+            ~/.cargo/bin/cargo-cinstall
+            ~/.cargo/bin/cargo-ctest
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-c-${{ runner.os }}-${{ runner.arch }}-0.10.24
 
       - name: Clone pinned upstream sources and apply compatibility patches
         run: scripts/bootstrap.sh
