@@ -1,0 +1,77 @@
+diff --git a/pEpForiOS/UI/Login/LoginViewController.swift b/pEpForiOS/UI/Login/LoginViewController.swift
+index c4a531d..008394b 100644
+--- a/pEpForiOS/UI/Login/LoginViewController.swift
++++ b/pEpForiOS/UI/Login/LoginViewController.swift
+@@ -123,9 +123,11 @@ final class LoginViewController: UIViewController {
+             return
+         }
+ 
+-        // Allow _any_ email address, don't check anything
+-        // (was calling `email.isProbablyValidEmail` and reporting
+-        // `LoginViewController.LoginError.invalidEmail` in case).
++        guard email.isProbablyValidEmail() else {
++            handleLoginError(error: LoginViewController.LoginError.invalidEmail,
++                             offerManualSetup: false)
++            return
++        }
+ 
+         guard let vm = viewModel else {
+             Log.shared.errorAndCrash("No VM")
+diff --git a/pEpForiOS/UI/Login/ViewModel/OAuthAuthorizer.swift b/pEpForiOS/UI/Login/ViewModel/OAuthAuthorizer.swift
+index 4023b4a..a32ce16 100644
+--- a/pEpForiOS/UI/Login/ViewModel/OAuthAuthorizer.swift
++++ b/pEpForiOS/UI/Login/ViewModel/OAuthAuthorizer.swift
+@@ -58,7 +58,9 @@ class OAuthAuthorizer {
+         if let theConfig = oauthType?.oauth2Config() {
+             currentAuthorizer?.delegate = self
+             currentAuthorizer?.startAuthorizationRequest(
+-                viewController: viewController, oauth2Configuration: theConfig)
++                viewController: viewController,
++                oauth2Configuration: theConfig,
++                loginHint: emailAddress)
+         } else {
+             delegate?.didAuthorize(oauth2Error: OAuthAuthorizerError.noConfiguration,
+                                    accessToken: nil)
+diff --git a/pEpForiOS/Util/OAuth2/OAuth2Authorization.swift b/pEpForiOS/Util/OAuth2/OAuth2Authorization.swift
+index 42dd650..afdb4c9 100644
+--- a/pEpForiOS/Util/OAuth2/OAuth2Authorization.swift
++++ b/pEpForiOS/Util/OAuth2/OAuth2Authorization.swift
+@@ -24,7 +24,16 @@ class OAuth2Authorization: OAuth2AuthorizationProtocol {
+     weak var delegate: OAuth2AuthorizationDelegateProtocol?
+ 
+     func startAuthorizationRequest(viewController: UIViewController,
+-                                   oauth2Configuration: OAuth2ConfigurationProtocol) {
++                                   oauth2Configuration: OAuth2ConfigurationProtocol,
++                                   loginHint: String?) {
++        var additionalParameters = [
++            "prompt": "select_account"
++        ]
++
++        if let loginHint = loginHint, !loginHint.isEmpty {
++            additionalParameters["login_hint"] = loginHint
++        }
++
+         let request = OIDAuthorizationRequest(
+             configuration: oauth2Configuration.oauth2Type.configurationOID(),
+             clientId: oauth2Configuration.clientID,
+@@ -32,7 +41,7 @@ class OAuth2Authorization: OAuth2AuthorizationProtocol {
+             scopes: oauth2Configuration.scopes,
+             redirectURL: oauth2Configuration.redirectURL,
+             responseType: OIDResponseTypeCode,
+-            additionalParameters: nil)
++            additionalParameters: additionalParameters)
+ 
+         currentAuthorizationFlow = OIDAuthState.authState(
+         byPresenting: request, presenting: viewController) { [weak self] authState, error in
+diff --git a/pEpForiOS/Util/OAuth2/OAuth2AuthorizationProtocol.swift b/pEpForiOS/Util/OAuth2/OAuth2AuthorizationProtocol.swift
+index 649647c..85d57f3 100644
+--- a/pEpForiOS/Util/OAuth2/OAuth2AuthorizationProtocol.swift
++++ b/pEpForiOS/Util/OAuth2/OAuth2AuthorizationProtocol.swift
+@@ -43,5 +43,6 @@ protocol OAuth2AuthorizationProtocol {
+      IMAP/SMTP this is ["https://mail.google.com/"]
+      */
+     func startAuthorizationRequest(viewController: UIViewController,
+-                                   oauth2Configuration: OAuth2ConfigurationProtocol)
++                                   oauth2Configuration: OAuth2ConfigurationProtocol,
++                                   loginHint: String?)
+ }

@@ -17,6 +17,9 @@ git clone --filter=blob:none https://codeberg.org/pEp/pEpForiOS-build.git "$work
     "$work_root/pEpForiOS.XCFrameworks/.submodules.json" \
     "$work_root/pEpForiOS.XCFrameworks"
 
+git -C "$work_root/pEpForiOS" apply \
+    "$repo_root/patches/oauth-login-hint.patch"
+
 mkdir -p "$work_root/pEpForiOS-intern/pEp4iosIntern"
 cp -R "$repo_root/shim/pEp4iosIntern/." "$work_root/pEpForiOS-intern/pEp4iosIntern/"
 cp "$repo_root/shim/secret.xcconfig" "$work_root/pEpForiOS-intern/secret.xcconfig"
