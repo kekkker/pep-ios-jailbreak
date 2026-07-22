@@ -18,7 +18,7 @@ if [[ ! -d "$HOME/yml2/.git" ]]; then
 fi
 
 pushd "$work_root/pEpForiOS.XCFrameworks"
-zig build run
+zig build --sysroot "$PEP_ZIG_HOST_SYSROOT" run
 popd
 
 rm -rf "$derived_data" "$artifacts"
