@@ -24,8 +24,19 @@ jobs:
 
       - name: Install build prerequisites
         run: |
-          brew install asn1c autoconf automake libtool gnu-sed wget ninja xcodegen jq
+          brew install autoconf automake libtool gnu-sed wget ninja xcodegen jq
           python3 -m pip install --user --break-system-packages lxml
+
+      - name: Install pEp-compatible asn1c
+        run: |
+          asn1c_prefix="$RUNNER_TEMP/asn1c-0.9.28"
+          git clone --branch v0.9.28 --depth 1 https://github.com/vlm/asn1c.git "$RUNNER_TEMP/asn1c-source"
+          cd "$RUNNER_TEMP/asn1c-source"
+          autoreconf -iv
+          ./configure --prefix="$asn1c_prefix"
+          make -j "$(sysctl -n hw.ncpu)"
+          make install
+          echo "$asn1c_prefix/bin" >> "$GITHUB_PATH"
 
       - name: Install upstream-compatible Zig
         run: |
@@ -93,9 +104,9 @@ jobs:
           path: |
             work/pEpForiOS.XCFrameworks/prefix
             work/pEpForiOS.XCFrameworks/Frameworks
-          key: pep-native-ios-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/.submodules.json') }}-${{ github.run_id }}
+          key: pep-native-ios-asn1c-0.9.28-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/.submodules.json') }}-${{ github.run_id }}
           restore-keys: |
-            pep-native-ios-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/.submodules.json') }}-
+            pep-native-ios-asn1c-0.9.28-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('work/pEpForiOS.XCFrameworks/.submodules.json') }}-
 
       - name: Build dependencies and application
         run: scripts/build.sh
