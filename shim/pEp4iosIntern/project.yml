@@ -12,7 +12,10 @@ targets:
     platform: iOS
     deploymentTarget: "16.0"
     sources:
-      - path: Sources
+      - path: Sources/pEp4iosIntern.m
+      - path: Sources/pEp4iosIntern.h
+        buildPhase: headers
+        headerVisibility: public
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: software.pEp.pEp4iosIntern
