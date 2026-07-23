@@ -1,6 +1,6 @@
 Package: software.pep.notifier
 Name: pEp Standalone Mail Notifier
-Version: 0.1.0
+Version: 0.1.1
 Architecture: iphoneos-arm64
 Description: App-independent IMAP IDLE notifications for pEp on rootless iOS
 Maintainer: pEp iOS jailbreak wrapper contributors

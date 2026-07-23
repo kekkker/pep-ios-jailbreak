@@ -289,6 +289,9 @@ def run_account(account, state):
         if result != "OK":
             raise RuntimeError("could not select INBOX")
         initialize_state(client, key, state)
+        # Catch mail delivered while the daemon or network was unavailable before
+        # waiting for the next IDLE event.
+        scan_new_messages(client, key, state)
         capabilities = {
             capability.decode("ascii", "ignore").upper()
             if isinstance(capability, bytes)

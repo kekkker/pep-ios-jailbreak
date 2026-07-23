@@ -86,11 +86,11 @@ jobs:
 
           mkdir -p artifacts
           dpkg-deb --root-owner-group --build "$package" \
-            artifacts/software.pep.notifier_0.1.0_iphoneos-arm64.deb
+            artifacts/software.pep.notifier_0.1.1_iphoneos-arm64.deb
 
       - name: Upload notifier package
         uses: actions/upload-artifact@v6
         with:
           name: pep-standalone-notifier
-          path: artifacts/software.pep.notifier_0.1.0_iphoneos-arm64.deb
+          path: artifacts/software.pep.notifier_0.1.1_iphoneos-arm64.deb
           if-no-files-found: error
