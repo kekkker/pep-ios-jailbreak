@@ -49,8 +49,13 @@ jobs:
           zig_archive="zig-${zig_arch}-macos-${zig_version}.tar.xz"
           zig_root="$PWD/zig-${zig_arch}-macos-${zig_version}"
           zig_url="https://ziglang.org/download/${zig_version}/${zig_archive}"
-          expected=$(curl -fsSL https://ziglang.org/download/index.json | jq -r ".\"${zig_version}\".\"${zig_arch}-macos\".shasum")
-          curl -fsSLO "$zig_url"
+          curl_retry=(--retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 30)
+          expected=$(curl "${curl_retry[@]}" -fsSL https://ziglang.org/download/index.json | jq -r ".\"${zig_version}\".\"${zig_arch}-macos\".shasum")
+          [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || {
+            echo "Zig download index returned an invalid checksum" >&2
+            exit 1
+          }
+          curl "${curl_retry[@]}" -fsSLO "$zig_url"
           echo "${expected}  ${zig_archive}" | shasum -a 256 -c -
           tar -xf "$zig_archive"
           echo "$zig_root" >> "$GITHUB_PATH"

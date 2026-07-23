@@ -4,10 +4,14 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 work_root="$repo_root/work"
 
+source "$repo_root/scripts/retry-command.sh"
+
 rm -rf "$work_root"
 mkdir -p "$work_root"
 
-git clone --filter=blob:none https://codeberg.org/pEp/pEpForiOS-build.git "$work_root/pEpForiOS-build"
+retry_command git clone --filter=blob:none \
+    https://codeberg.org/pEp/pEpForiOS-build.git \
+    "$work_root/pEpForiOS-build"
 
 "$repo_root/scripts/clone-pinned.sh" \
     "$work_root/pEpForiOS-build/.submodules.json" \

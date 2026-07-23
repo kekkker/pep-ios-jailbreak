@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_root=$(cd "$(dirname "$0")" && pwd)
+source "$script_root/retry-command.sh"
+
 manifest=${1:?manifest path required}
 destination_root=${2:?destination root required}
 
@@ -18,9 +21,10 @@ while IFS=$'\t' read -r upstream_url relative_path commit; do
 
     if [[ ! -d "$target/.git" ]]; then
         echo "Cloning $relative_path"
-        git clone --filter=blob:none --no-checkout "$clone_url" "$target"
+        retry_command git clone --filter=blob:none --no-checkout \
+            "$clone_url" "$target"
     fi
 
-    git -C "$target" fetch --filter=blob:none origin "$commit"
+    retry_command git -C "$target" fetch --filter=blob:none origin "$commit"
     git -C "$target" checkout --detach "$commit"
 done
