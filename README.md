@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.4_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.5_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -30,11 +30,16 @@ and never exports pEp's account passwords.
 pEp's GUI and headless host serialize ownership of the shared app-group store.
 Launching the GUI makes the daemon commit and exit before the app initializes;
 terminating the GUI releases ownership back to launchd. New messages are parsed,
-stored, decrypted, and synchronized by pEp's normal model stack. Because the
-headless engine is the real `software.pEp.mail` application executable, it
-submits sender and subject through `UNUserNotificationCenter.current()` using
-pEp's normal notification authorization and identity. It does not impersonate
-the app or inject into SpringBoard.
+stored, decrypted, and synchronized by pEp's normal model stack.
+
+The headless process does not call `UNUserNotificationCenter` directly. It
+atomically queues sender and subject in pEp's app-group container, then asks
+iOS's notification-action launcher to start `software.pEp.mail` through its
+normal UIKit and RunningBoard lifecycle. That short-lived system-managed app
+launch submits the notification, acknowledges the background response, and
+exits without initializing the mail model or UI. This preserves pEp's own
+notification identity while avoiding the malformed SpringBoard history entries
+created when a raw launchd process submits app notifications.
 
 Upstream pEp has its broken IMAP IDLE path disabled and currently polls using
 its own replication service, normally every ten seconds.
@@ -68,6 +73,11 @@ before iOS can suspend it. This deterministically releases the database lock;
 launchd can then transfer mail ownership to the headless mode. Notification
 requests use a one-second nonrepeating timer so iOS 16 archives an explicit
 `UNNotificationTriggerType`, and they do not mutate or present a badge.
+
+Version 1.1.5 replaces daemon-side notification submission with the
+system-managed delivery launch described above. Sender and subject remain in
+the notification, queued messages are retried, and the daemon still uses pEp's
+single built-in mail engine.
 
 ## License
 

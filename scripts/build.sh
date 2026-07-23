@@ -51,8 +51,8 @@ if [[ -z "$app" ]]; then
 fi
 
 # The launch daemon executes this exact application binary with
-# PEP_HEADLESS_NOTIFIER=1. Both UI and headless mail modes therefore use the
-# real software.pEp.mail identity and UNUserNotificationCenter.current().
+# PEP_HEADLESS_NOTIFIER=1. It queues notification payloads, then asks iOS to
+# relaunch pEp through its normal UIKit lifecycle for notification submission.
 ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 
@@ -87,10 +87,10 @@ chmod 644 \
     "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.1.4_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.1.5_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.1.4_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.1.5_iphoneos-arm64.deb"

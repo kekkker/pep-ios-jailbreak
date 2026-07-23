@@ -19,5 +19,15 @@
 	<array>
 		<string>group.software.pEp</string>
 	</array>
+	<!-- The daemon asks iOS to perform the same RunningBoard-managed
+	     background launch used for a notification action. This keeps
+	     UNUserNotificationCenter calls inside a real UIKit application
+	     lifecycle instead of the launchd headless process. -->
+	<key>platform-application</key>
+	<true/>
+	<key>com.apple.springboard.launchapplications</key>
+	<true/>
+	<key>com.apple.multitasking.unlimitedassertions</key>
+	<true/>
 </dict>
 </plist>
