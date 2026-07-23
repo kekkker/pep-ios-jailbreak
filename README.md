@@ -18,6 +18,19 @@ stored here.
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` as an artifact.
 
+## Standalone jailbreak notifier
+
+The `Build standalone notifier` workflow produces a rootless Debian package for
+iOS 16. Its launch daemon maintains IMAP IDLE connections independently of the
+pEp application and queues sender/subject bulletins through a small SpringBoard
+bridge. IMAP passwords are read from pEp's existing Keychain items at launch and
+passed to the Python worker through an anonymous pipe; they are not copied into
+configuration files or logs.
+
+The notifier package requires Procursus `python3` and Limneos `libbulletin`.
+It deliberately initializes each account at its current highest UID so the first
+launch does not generate banners for the existing mailbox.
+
 ## License
 
 The build glue in this repository is GPL-3.0-or-later. Upstream components keep

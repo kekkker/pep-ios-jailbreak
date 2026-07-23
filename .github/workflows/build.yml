@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore:
+      - "notifier/**"
+      - ".github/workflows/notifier.yml"
 
 permissions:
   contents: read
