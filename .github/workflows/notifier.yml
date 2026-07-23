@@ -37,16 +37,22 @@ jobs:
             notifier/pep-notifier-launcher.m \
             -o build/pep-notifier-launcher
 
-          xcrun --sdk iphoneos clang \
-            -fobjc-arc \
-            -dynamiclib \
-            -target arm64-apple-ios16.0 \
-            -isysroot "$sdk" \
-            -framework Foundation \
-            -Wl,-undefined,dynamic_lookup \
-            -Wl,-install_name,/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib \
-            notifier/pep-notifier-bridge.m \
-            -o build/pep-notifier-bridge.dylib
+          for architecture in arm64 arm64e; do
+            xcrun --sdk iphoneos clang \
+              -fobjc-arc \
+              -dynamiclib \
+              -target "${architecture}-apple-ios16.0" \
+              -isysroot "$sdk" \
+              -framework Foundation \
+              -Wl,-undefined,dynamic_lookup \
+              -Wl,-install_name,/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib \
+              notifier/pep-notifier-bridge.m \
+              -o "build/pep-notifier-bridge-${architecture}.dylib"
+          done
+          xcrun lipo -create \
+            build/pep-notifier-bridge-arm64.dylib \
+            build/pep-notifier-bridge-arm64e.dylib \
+            -output build/pep-notifier-bridge.dylib
 
           ldid -Snotifier/launcher.entitlements build/pep-notifier-launcher
           ldid -S build/pep-notifier-bridge.dylib
@@ -72,10 +78,10 @@ jobs:
 
           chmod 755 \
             "$package/var/jb/usr/libexec/pep-notifier-launcher" \
-            "$package/var/jb/usr/libexec/pep-notifier.py"
+            "$package/var/jb/usr/libexec/pep-notifier.py" \
+            "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib"
           chmod 644 \
             "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist" \
-            "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib" \
             "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.plist"
 
           mkdir -p artifacts
