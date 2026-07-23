@@ -1,6 +1,7 @@
 work/
 DerivedData/
 artifacts/
+build/
 *.log
 __pycache__/
 *.pyc

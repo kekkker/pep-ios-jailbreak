@@ -2,6 +2,19 @@ import Darwin
 import Foundation
 import MessageModel
 
+@_silgen_name("notify_post")
+private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
+
+@_silgen_name("notify_register_check")
+private func systemNotifyRegisterCheck(
+    _ name: UnsafePointer<CChar>,
+    _ token: UnsafeMutablePointer<Int32>) -> UInt32
+
+@_silgen_name("notify_check")
+private func systemNotifyCheck(
+    _ token: Int32,
+    _ changed: UnsafeMutablePointer<Int32>) -> UInt32
+
 private let appGroupIdentifier = "group.software.pEp"
 private let newMessageNotification = Notification.Name("pEpNewInboxMessagePersisted")
 private let takeoverNotification = "software.pep.native-notifier.takeover"
@@ -123,12 +136,15 @@ private final class NativeNotifier {
     }
 
     private func registerForTakeover() {
-        guard notify_register_check(takeoverNotification, &takeoverToken) == NOTIFY_STATUS_OK else {
+        let status = takeoverNotification.withCString {
+            systemNotifyRegisterCheck($0, &takeoverToken)
+        }
+        guard status == 0 else {
             log("failed to register GUI takeover notification")
             exit(70)
         }
         var ignored: Int32 = 0
-        notify_check(takeoverToken, &ignored)
+        systemNotifyCheck(takeoverToken, &ignored)
     }
 
     private func acquireMailEngineOwnership() {
@@ -175,7 +191,7 @@ private final class NativeNotifier {
 
     private func takeoverWasRequested() -> Bool {
         var changed: Int32 = 0
-        guard notify_check(takeoverToken, &changed) == NOTIFY_STATUS_OK else {
+        guard systemNotifyCheck(takeoverToken, &changed) == 0 else {
             return false
         }
         return changed != 0
@@ -218,7 +234,9 @@ private final class NativeNotifier {
                     [.posixPermissions: 0o600],
                     ofItemAtPath: temporaryURL.path)
                 try fileManager.moveItem(at: temporaryURL, to: finalURL)
-                notify_post(bulletinNotification)
+                bulletinNotification.withCString {
+                    _ = systemNotifyPost($0)
+                }
                 log("queued bulletin from pEp MessageModel")
             } catch {
                 log("unable to queue bulletin: \(error.localizedDescription)")

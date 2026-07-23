@@ -74,14 +74,17 @@ diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
 index 27fd135bb..98abb7674 100644
 --- a/pEpForiOS/AppDelegate.swift
 +++ b/pEpForiOS/AppDelegate.swift
-@@ -7,6 +7,7 @@
- //
- 
+@@ -9,2 +9,3 @@
  import BackgroundTasks
 +import Darwin
  import UserNotifications
- 
- import pEpIOSToolbox
+@@ -14,3 +15,5 @@
+ import pEp4iosIntern
+-
++@_silgen_name("notify_post")
++private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
++
+ @UIApplicationMain
 @@ -19,7 +20,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
  
      private var newMailObserver: NSObjectProtocol?
@@ -136,7 +139,7 @@ index 27fd135bb..98abb7674 100644
              Log.shared.warn("Notifications: delivered for %d newly persisted Inbox message(s)",
                              count)
          }
-@@ -343,6 +357,50 @@ extension AppDelegate {
+@@ -343,6 +357,52 @@ extension AppDelegate {
      }
  }
  
@@ -165,7 +168,9 @@ index 27fd135bb..98abb7674 100644
 +            return false
 +        }
 +
-+        notify_post(Self.takeoverNotification)
++        Self.takeoverNotification.withCString {
++            _ = systemNotifyPost($0)
++        }
 +        while flock(descriptor, LOCK_EX) != 0 {
 +            if errno != EINTR {
 +                NSLog("pEp daemon ownership: unable to acquire lock (errno %d)", errno)
