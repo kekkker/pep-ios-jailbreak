@@ -1,0 +1,10 @@
+#!/bin/sh
+
+for binary in /var/containers/Bundle/Application/*/pEp.app/pEpNativeNotifier; do
+    if [ -x "$binary" ]; then
+        exec "$binary"
+    fi
+done
+
+echo "pep-native-launcher: pEpNativeNotifier was not found" >&2
+exit 72

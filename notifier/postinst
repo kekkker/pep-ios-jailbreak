@@ -2,6 +2,31 @@
 set -e
 
 plist=/var/jb/Library/LaunchDaemons/software.pep.notifier.plist
+cache_root=/var/mobile/Library/Caches/software.pep.notifier
+queue_link="$cache_root/queue"
+
+for metadata in /var/mobile/Containers/Shared/AppGroup/*/.com.apple.mobile_container_manager.metadata.plist; do
+    [ -f "$metadata" ] || continue
+    grep -a -q "group.software.pEp" "$metadata" || continue
+
+    group_root=${metadata%/.com.apple.mobile_container_manager.metadata.plist}
+    group_queue="$group_root/Library/Caches/software.pep.notifier/queue"
+    mkdir -p "$group_queue" "$cache_root"
+    chown -R mobile:mobile "$group_root/Library/Caches/software.pep.notifier" "$cache_root"
+
+    if [ -L "$queue_link" ]; then
+        rm -f "$queue_link"
+    elif [ -d "$queue_link" ]; then
+        for bulletin in "$queue_link"/*.plist; do
+            [ -f "$bulletin" ] || continue
+            mv "$bulletin" "$group_queue/"
+        done
+        rmdir "$queue_link" >/dev/null 2>&1 || true
+    fi
+    [ -e "$queue_link" ] || ln -s "$group_queue" "$queue_link"
+    break
+done
+
 launchctl bootout system/software.pep.notifier >/dev/null 2>&1 || true
 launchctl bootstrap system "$plist" >/dev/null 2>&1 || true
 launchctl kickstart -k system/software.pep.notifier >/dev/null 2>&1 || true

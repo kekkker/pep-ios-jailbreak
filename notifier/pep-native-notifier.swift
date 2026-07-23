@@ -12,9 +12,13 @@ private func systemNotifyCheck(
     _ token: Int32,
     _ changed: UnsafeMutablePointer<Int32>) -> UInt32
 
+@_silgen_name("notify_post")
+private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
+
 private let appGroupIdentifier = "group.software.pEp"
 private let newMessageNotification = Notification.Name("pEpNewInboxMessagePersisted")
 private let takeoverNotification = "software.pep.native-notifier.takeover"
+private let newBulletinNotification = "software.pep.notifier.new-bulletin"
 
 private func log(_ message: String) {
     FileHandle.standardError.write(Data(("pep-native-notifier: \(message)\n").utf8))
@@ -91,13 +95,7 @@ private final class NativeNotifier {
     private let providers = HeadlessProviders()
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "software.pep.native-notifier.bulletins")
-    private let bulletinFileDescriptor: Int32 = {
-        guard let value = ProcessInfo.processInfo.environment["PEP_BULLETIN_FD"],
-              let descriptor = Int32(value) else {
-            return -1
-        }
-        return descriptor
-    }()
+    private var bulletinQueueURL: URL?
     private var lockFileDescriptor: Int32 = -1
     private var takeoverToken: Int32 = 0
     private var takeoverTimer: Timer?
@@ -152,6 +150,21 @@ private final class NativeNotifier {
             forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             log("app-group container unavailable")
             exit(71)
+        }
+
+        let queueURL = container
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Caches", isDirectory: true)
+            .appendingPathComponent("software.pep.notifier", isDirectory: true)
+            .appendingPathComponent("queue", isDirectory: true)
+        do {
+            try fileManager.createDirectory(
+                at: queueURL,
+                withIntermediateDirectories: true)
+            bulletinQueueURL = queueURL
+        } catch {
+            log("unable to create app-group bulletin queue: \(error.localizedDescription)")
+            exit(74)
         }
 
         let lockURL = container.appendingPathComponent("pep-mail-engine.lock")
@@ -213,9 +226,9 @@ private final class NativeNotifier {
     private func queueBulletin(sender: String?, subject: String?) {
         let title = cleaned(sender, fallback: "New email", limit: 180)
         let message = cleaned(subject, fallback: "(No subject)", limit: 500)
-        queue.async { [bulletinFileDescriptor] in
+        queue.async { [weak self] in
             do {
-                guard bulletinFileDescriptor >= 0 else {
+                guard let self, let queueURL = self.bulletinQueueURL else {
                     throw CocoaError(.fileNoSuchFile)
                 }
                 let payload: [String: String] = [
@@ -227,39 +240,20 @@ private final class NativeNotifier {
                     fromPropertyList: payload,
                     format: .binary,
                     options: 0)
-                var length = UInt32(payloadData.count).bigEndian
-                let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-                guard self.writeAll(header, to: bulletinFileDescriptor),
-                      self.writeAll(payloadData, to: bulletinFileDescriptor) else {
+                let bulletinURL = queueURL
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension("plist")
+                try payloadData.write(to: bulletinURL, options: .atomic)
+                let status = newBulletinNotification.withCString {
+                    systemNotifyPost($0)
+                }
+                guard status == 0 else {
                     throw CocoaError(.fileWriteUnknown)
                 }
                 log("queued bulletin from pEp MessageModel")
             } catch {
                 log("unable to queue bulletin: \(error.localizedDescription)")
             }
-        }
-    }
-
-    private func writeAll(_ data: Data, to descriptor: Int32) -> Bool {
-        return data.withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.baseAddress else {
-                return data.isEmpty
-            }
-            var written = 0
-            while written < data.count {
-                let result = Darwin.write(
-                    descriptor,
-                    baseAddress.advanced(by: written),
-                    data.count - written)
-                if result < 0 {
-                    if errno == EINTR {
-                        continue
-                    }
-                    return false
-                }
-                written += result
-            }
-            return true
         }
     }
 }

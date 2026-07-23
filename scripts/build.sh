@@ -76,12 +76,6 @@ xcrun --sdk iphoneos swiftc \
     -Xlinker @executable_path/Frameworks \
     -o "$app/pEpNativeNotifier"
 
-xcrun --sdk iphoneos clang \
-    -target arm64-apple-ios16.0 \
-    -isysroot "$sdk" \
-    "$repo_root/notifier/pep-native-notifier-launcher.c" \
-    -o "$native_build/pep-native-notifier-launcher"
-
 for architecture in arm64 arm64e; do
     xcrun --sdk iphoneos clang \
         -fobjc-arc \
@@ -106,7 +100,6 @@ ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/pEpNativeNotifier"
 ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/$(defaults read "$app/Info" CFBundleExecutable)"
-ldid -S "$native_build/pep-native-notifier-launcher"
 ldid -S "$native_build/pep-notifier-bridge.dylib"
 
 mkdir -p "$artifacts/Payload"
@@ -127,7 +120,8 @@ mkdir -p \
 cp "$repo_root/notifier/control" "$package/DEBIAN/control"
 cp "$repo_root/notifier/postinst" "$package/DEBIAN/postinst"
 cp "$repo_root/notifier/prerm" "$package/DEBIAN/prerm"
-cp "$native_build/pep-native-notifier-launcher" "$package/var/jb/usr/libexec/"
+cp "$repo_root/notifier/pep-native-notifier-launcher" \
+    "$package/var/jb/usr/libexec/"
 cp "$repo_root/notifier/software.pep.notifier.plist" \
     "$package/var/jb/Library/LaunchDaemons/"
 cp "$native_build/pep-notifier-bridge.dylib" \
@@ -146,11 +140,11 @@ chmod 644 \
     "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.0.2_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.3_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 file "$app/pEpNativeNotifier"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.0.2_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.3_iphoneos-arm64.deb"
