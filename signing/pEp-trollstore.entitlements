@@ -20,10 +20,9 @@
 		<string>group.software.pEp</string>
 	</array>
 	<!-- The headless mode needs only this narrow entitlement to send the
-	     real UIKit background-fetch action through FrontBoard. Keep the GUI
-	     a normal application: platform-application makes SpringBoard discard
-	     its otherwise valid notification-list entries during lock
-	     reconciliation. -->
+	     real UIKit background-fetch action through FrontBoard. The GUI remains
+	     a normal, non-platform application with no unlimited-background
+	     entitlement. -->
 	<key>com.apple.springboard.launchapplications</key>
 	<true/>
 </dict>

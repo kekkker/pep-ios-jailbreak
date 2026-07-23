@@ -63,9 +63,6 @@ git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/frontboard-background-fetch-notifications.patch"
 
 git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/non-platform-notification-owner-migration.patch"
-
-git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/immediate-notification-delivery.patch"
 
 git -C "$work_root/pEpForiOS" apply \

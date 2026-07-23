@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.12_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.13_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -59,12 +59,6 @@ testing free of app-initiated removal:
 - Foreground and headless requests use unique identifiers, and successful
   submission/presentation logs include the identifier.
 
-Restart SpringBoard before interpreting a test from this build. Deleting the
-old injected bridge from disk does not unload it from the existing SpringBoard
-process. The baseline package deliberately leaves `software.pep.notifier`
-unloaded after installation for the foreground test. Enable it only after
-foreground persistence is confirmed.
-
 Version 1.1.4 also addresses the `0xdead10cc` RunningBoard termination found
 during the foreground test. pEp previously started asynchronous cleanup while
 entering the background and was suspended with a Core Data/SQLite lock. It now
@@ -105,16 +99,20 @@ notification-center action is created.
 
 Version 1.1.11 removes `platform-application` and unlimited-background
 entitlements from the pEp GUI. The headless mode retains only the narrow
-FrontBoard launch entitlement. On iOS 16.3, SpringBoard's lock reconciliation
-discarded the entire visible notification list whenever it encountered a local
-notification owned by the platform-signed GUI, even though usernotificationsd
-kept the delivered request intact. A one-time pEp-only migration removes those
-stale platform-owner requests before the first non-platform delivery.
+FrontBoard launch entitlement. Native background fetch and local notification
+delivery work without granting the GUI platform identity.
 
 Version 1.1.12 submits queued mail notifications as immediate local requests
 with a `nil` trigger. This removes the one-second timer's `RequestDate` and
 `TimeInterval` trigger metadata while retaining the real UIKit background-fetch
 launch, non-platform app identity, notification content, and destinations.
+
+Version 1.1.13 removes the disproven platform-owner notification cleanup, so an
+install never deletes pending or delivered pEp notifications. The package now
+starts the native notifier automatically after installation. Physical
+lock/unlock testing traced the Notification Center failure to Reo 3.1.2
+modifying SpringBoard's shared `NCNotificationListView`, not to pEp submission,
+trigger metadata, or notification ownership.
 
 ## License
 
