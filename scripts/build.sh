@@ -50,11 +50,62 @@ if [[ -z "$app" ]]; then
     exit 1
 fi
 
+sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+products=$(dirname "$app")
+native_build="$repo_root/build/native-notifier"
+rm -rf "$native_build"
+mkdir -p "$native_build"
+
+# Build a tiny host executable against the exact MessageModel framework that
+# xcodebuild just embedded in pEp.app. The embedded copy has its compiler
+# modules stripped, so compile against the unstripped sibling product and load
+# the embedded copy at runtime. It contains no IMAP implementation.
+if [[ ! -d "$products/MessageModel.framework/Modules/MessageModel.swiftmodule" ]]; then
+    echo "Unstripped MessageModel compiler module was not produced" >&2
+    exit 1
+fi
+xcrun --sdk iphoneos swiftc \
+    -target arm64-apple-ios16.0 \
+    -sdk "$sdk" \
+    -F "$products" \
+    "$repo_root/notifier/pep-native-notifier.swift" \
+    -framework MessageModel \
+    -Xlinker -rpath \
+    -Xlinker @executable_path/Frameworks \
+    -o "$app/pEpNativeNotifier"
+
+xcrun --sdk iphoneos clang \
+    -target arm64-apple-ios16.0 \
+    -isysroot "$sdk" \
+    "$repo_root/notifier/pep-native-notifier-launcher.c" \
+    -o "$native_build/pep-native-notifier-launcher"
+
+for architecture in arm64 arm64e; do
+    xcrun --sdk iphoneos clang \
+        -fobjc-arc \
+        -dynamiclib \
+        -target "${architecture}-apple-ios16.0" \
+        -isysroot "$sdk" \
+        -framework Foundation \
+        -Wl,-undefined,dynamic_lookup \
+        -Wl,-install_name,/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib \
+        "$repo_root/notifier/pep-notifier-bridge.m" \
+        -o "$native_build/pep-notifier-bridge-${architecture}.dylib"
+done
+xcrun lipo -create \
+    "$native_build/pep-notifier-bridge-arm64.dylib" \
+    "$native_build/pep-notifier-bridge-arm64e.dylib" \
+    -output "$native_build/pep-notifier-bridge.dylib"
+
 # TrollStore preserves entitlements already present on an ldid-fakesigned
 # executable. The application stores its Core Data database in this app-group
 # container and aborts at launch when the entitlement is absent.
 ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
+    "$app/pEpNativeNotifier"
+ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/$(defaults read "$app/Info" CFBundleExecutable)"
+ldid -S "$native_build/pep-native-notifier-launcher"
+ldid -S "$native_build/pep-notifier-bridge.dylib"
 
 mkdir -p "$artifacts/Payload"
 cp -R "$app" "$artifacts/Payload/"
@@ -63,6 +114,41 @@ cp -R "$app" "$artifacts/Payload/"
     ditto -c -k --sequesterRsrc --keepParent Payload pEp-iOS16-trollstore.ipa
 )
 
+package="$repo_root/build/package"
+rm -rf "$package"
+mkdir -p \
+    "$package/DEBIAN" \
+    "$package/var/jb/usr/libexec" \
+    "$package/var/jb/Library/LaunchDaemons" \
+    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries"
+
+cp "$repo_root/notifier/control" "$package/DEBIAN/control"
+cp "$repo_root/notifier/postinst" "$package/DEBIAN/postinst"
+cp "$repo_root/notifier/prerm" "$package/DEBIAN/prerm"
+cp "$native_build/pep-native-notifier-launcher" "$package/var/jb/usr/libexec/"
+cp "$repo_root/notifier/software.pep.notifier.plist" \
+    "$package/var/jb/Library/LaunchDaemons/"
+cp "$native_build/pep-notifier-bridge.dylib" \
+    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/"
+cp "$repo_root/notifier/pep-notifier-bridge.plist" \
+    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/"
+
+chmod 755 \
+    "$package/DEBIAN/postinst" \
+    "$package/DEBIAN/prerm" \
+    "$package/var/jb/usr/libexec/pep-native-notifier-launcher" \
+    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib"
+chmod 644 \
+    "$package/DEBIAN/control" \
+    "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist" \
+    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.plist"
+
+dpkg-deb --root-owner-group --build "$package" \
+    "$artifacts/software.pep.notifier_1.0.0_iphoneos-arm64.deb"
+
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
+file "$app/pEpNativeNotifier"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
-ls -lh "$artifacts/pEp-iOS16-trollstore.ipa"
+ls -lh \
+    "$artifacts/pEp-iOS16-trollstore.ipa" \
+    "$artifacts/software.pep.notifier_1.0.0_iphoneos-arm64.deb"

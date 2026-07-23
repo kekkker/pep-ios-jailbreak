@@ -16,20 +16,26 @@ stored here.
 ## Build
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
-`pEp-iOS16-trollstore.ipa` as an artifact.
+`pEp-iOS16-trollstore.ipa` and
+`software.pep.notifier_1.0.0_iphoneos-arm64.deb` as artifacts.
 
-## Standalone jailbreak notifier
+## Native jailbreak background engine
 
-The `Build standalone notifier` workflow produces a rootless Debian package for
-iOS 16. Its launch daemon maintains IMAP IDLE connections independently of the
-pEp application and queues sender/subject bulletins through a small SpringBoard
-bridge. IMAP passwords are read from pEp's existing Keychain items at launch and
-passed to the Python worker through an anonymous pipe; they are not copied into
-configuration files or logs.
+The IPA contains a small headless executable linked to the same
+`MessageModel.framework`, `PantomimeFramework.framework`, and pEp engine
+frameworks as the GUI. The Debian package installs only a launchd locator and a
+SpringBoard bulletin bridge. It contains no second IMAP client and never exports
+pEp's account passwords.
 
-The notifier package requires Procursus `python3` and Limneos `libbulletin`.
-It deliberately initializes each account at its current highest UID so the first
-launch does not generate banners for the existing mailbox.
+pEp's GUI and headless host serialize ownership of the shared app-group store.
+Launching the GUI makes the daemon commit and exit before the app initializes;
+terminating the GUI releases ownership back to launchd. New messages are parsed,
+stored, decrypted, and synchronized by pEp's normal model stack, then the bridge
+shows sender and subject through Limneos `libbulletin`.
+
+The native package depends only on `net.limneos.libbulletin`. Upstream pEp has
+its broken IMAP IDLE path disabled and currently polls using its own replication
+service, normally every ten seconds.
 
 ## License
 

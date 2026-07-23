@@ -1,8 +1,8 @@
 Package: software.pep.notifier
-Name: pEp Standalone Mail Notifier
-Version: 0.1.1
+Name: pEp Native Background Engine
+Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: App-independent IMAP IDLE notifications for pEp on rootless iOS
+Description: Headless host for the MessageModel and Pantomime frameworks shipped by pEp
 Maintainer: pEp iOS jailbreak wrapper contributors
 Section: Utilities
-Depends: python3, net.limneos.libbulletin
+Depends: net.limneos.libbulletin

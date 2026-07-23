@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths-ignore:
-      - "notifier/**"
-      - ".github/workflows/notifier.yml"
 
 permissions:
   contents: read
@@ -27,7 +24,7 @@ jobs:
 
       - name: Install build prerequisites
         run: |
-          brew install autoconf automake libtool gnu-sed wget ninja xcodegen jq ldid
+          brew install autoconf automake libtool gnu-sed wget ninja xcodegen jq ldid dpkg
           python3 -m pip install --user --break-system-packages lxml
 
       - name: Install pEp-compatible asn1c
@@ -136,6 +133,14 @@ jobs:
         with:
           name: pEp-iOS16-trollstore
           path: artifacts/pEp-iOS16-trollstore.ipa
+          if-no-files-found: error
+
+      - name: Upload native notifier package
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pep-native-background-engine
+          path: artifacts/software.pep.notifier_1.0.0_iphoneos-arm64.deb
           if-no-files-found: error
 
       - name: Upload diagnostic log

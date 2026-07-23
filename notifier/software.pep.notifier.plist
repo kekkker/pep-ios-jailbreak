@@ -6,7 +6,7 @@
 	<string>software.pep.notifier</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/var/jb/usr/libexec/pep-notifier-launcher</string>
+		<string>/var/jb/usr/libexec/pep-native-notifier-launcher</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -22,6 +22,8 @@
 	<dict>
 		<key>PATH</key>
 		<string>/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin</string>
+		<key>PEP_HEADLESS_NOTIFIER</key>
+		<string>1</string>
 	</dict>
 	<key>StandardOutPath</key>
 	<string>/var/mobile/Library/Logs/software.pep.notifier.log</string>

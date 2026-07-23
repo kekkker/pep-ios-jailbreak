@@ -35,6 +35,9 @@ git -C "$work_root/pEpForiOS" apply \
 git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/near-instant-mail-notifications.patch"
 
+git -C "$work_root/pEpForiOS" apply \
+    "$repo_root/patches/pep-native-daemon-support.patch"
+
 mkdir -p "$work_root/pEpForiOS-intern/pEp4iosIntern"
 cp -R "$repo_root/shim/pEp4iosIntern/." "$work_root/pEpForiOS-intern/pEp4iosIntern/"
 cp "$repo_root/shim/secret.xcconfig" "$work_root/pEpForiOS-intern/secret.xcconfig"

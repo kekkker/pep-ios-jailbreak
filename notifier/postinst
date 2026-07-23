@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+plist=/var/jb/Library/LaunchDaemons/software.pep.notifier.plist
+launchctl bootout system/software.pep.notifier >/dev/null 2>&1 || true
+launchctl bootstrap system "$plist" >/dev/null 2>&1 || true
+launchctl kickstart -k system/software.pep.notifier >/dev/null 2>&1 || true
+
+exit 0
