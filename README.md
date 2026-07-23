@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.6_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.7_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -83,6 +83,10 @@ Version 1.1.6 exits the short-lived delivery launch synchronously after
 acknowledging the notification response. This prevents RunningBoard from
 suspending it before cleanup and ensures later messages start a fresh delivery
 cycle.
+
+Version 1.1.7 removes the unnecessary post-submission grace period. Once
+`UNUserNotificationCenter` accepts a local request, iOS owns its timer and the
+delivery process can acknowledge the launch and exit immediately.
 
 ## License
 

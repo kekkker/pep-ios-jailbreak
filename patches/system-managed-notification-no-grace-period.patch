@@ -1,0 +1,14 @@
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -103,9 +103,7 @@ private enum PEPNotificationDeliveryQueue {
+         }
+ 
+         group.notify(queue: .main) {
+-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) {
+-                completion()
+-            }
++            completion()
+         }
+     }
+ 
