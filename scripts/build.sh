@@ -67,7 +67,9 @@ fi
 xcrun --sdk iphoneos swiftc \
     -target arm64-apple-ios16.0 \
     -sdk "$sdk" \
+    -I "$products" \
     -F "$products" \
+    -Xcc -I"$work_root/pEpForiOS.XCFrameworks/pEpEngine/build-mac/include" \
     "$repo_root/notifier/pep-native-notifier.swift" \
     -framework MessageModel \
     -Xlinker -rpath \
