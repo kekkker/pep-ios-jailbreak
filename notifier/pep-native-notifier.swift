@@ -221,19 +221,19 @@ private final class NativeNotifier {
                     attributes: [.posixPermissions: 0o700])
                 let finalURL = bulletinQueue.appendingPathComponent(
                     "\(DispatchTime.now().uptimeNanoseconds)-\(UUID().uuidString).plist")
-                let temporaryURL = finalURL.appendingPathExtension("tmp")
-                let payload: NSDictionary = [
+                let payload: [String: String] = [
                     "title": title,
                     "message": message,
                     "bundle_id": "software.pEp.mail"
                 ]
-                guard payload.write(to: temporaryURL, atomically: true) else {
-                    throw CocoaError(.fileWriteUnknown)
-                }
+                let payloadData = try PropertyListSerialization.data(
+                    fromPropertyList: payload,
+                    format: .binary,
+                    options: 0)
+                try payloadData.write(to: finalURL, options: .atomic)
                 try fileManager.setAttributes(
                     [.posixPermissions: 0o600],
-                    ofItemAtPath: temporaryURL.path)
-                try fileManager.moveItem(at: temporaryURL, to: finalURL)
+                    ofItemAtPath: finalURL.path)
                 bulletinNotification.withCString {
                     _ = systemNotifyPost($0)
                 }
