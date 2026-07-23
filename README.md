@@ -108,7 +108,8 @@ entitlements from the pEp GUI. The headless mode retains only the narrow
 FrontBoard launch entitlement. On iOS 16.3, SpringBoard's lock reconciliation
 discarded the entire visible notification list whenever it encountered a local
 notification owned by the platform-signed GUI, even though usernotificationsd
-kept the delivered request intact.
+kept the delivered request intact. A one-time pEp-only migration removes those
+stale platform-owner requests before the first non-platform delivery.
 
 ## License
 

@@ -1,0 +1,34 @@
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -35,6 +35,21 @@ private struct PEPQueuedNotification: Codable {
+ private enum PEPNotificationDeliveryQueue {
+     private static let appGroupIdentifier = "group.software.pEp"
+     private static let directoryName = "notification-delivery-queue"
++    private static let nonPlatformMigrationKey =
++        "notificationDelivery.nonPlatformOwner.v1"
++
++    static func migrateFromPlatformNotificationOwnerIfNeeded() {
++        let defaults =
++            UserDefaults(suiteName: appGroupIdentifier) ?? .standard
++        guard !defaults.bool(forKey: nonPlatformMigrationKey) else {
++            return
++        }
++        let center = UNUserNotificationCenter.current()
++        center.removeAllPendingNotificationRequests()
++        center.removeAllDeliveredNotifications()
++        defaults.set(true, forKey: nonPlatformMigrationKey)
++        NSLog("pEp notification queue: cleared platform-owner records")
++    }
+ 
+     static var hasPendingNotifications: Bool {
+         return !queuedFiles().isEmpty
+@@ -241,6 +256,8 @@ extension AppDelegate {
+             // and pretty much don't do anything.
+             return false
+         }
++        PEPNotificationDeliveryQueue
++            .migrateFromPlatformNotificationOwnerIfNeeded()
+         if PEPNotificationDeliveryQueue.hasPendingNotifications {
+             UNUserNotificationCenter.current().delegate = self
+             let workItem = DispatchWorkItem { [weak self] in
