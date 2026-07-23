@@ -64,6 +64,13 @@ if [[ ! -d "$products/MessageModel.framework/Modules/MessageModel.swiftmodule" ]
     echo "Unstripped MessageModel compiler module was not produced" >&2
     exit 1
 fi
+xcrun --sdk iphoneos clang \
+    -fobjc-arc \
+    -c \
+    -target arm64-apple-ios16.0 \
+    -isysroot "$sdk" \
+    "$repo_root/notifier/pep-notification-center.m" \
+    -o "$native_build/pep-notification-center.o"
 xcrun --sdk iphoneos swiftc \
     -target arm64-apple-ios16.0 \
     -sdk "$sdk" \
@@ -71,27 +78,12 @@ xcrun --sdk iphoneos swiftc \
     -F "$products" \
     -Xcc -I"$work_root/pEpForiOS.XCFrameworks/pEpEngine/build-mac/include" \
     "$repo_root/notifier/pep-native-notifier.swift" \
+    "$native_build/pep-notification-center.o" \
     -framework MessageModel \
+    -framework UserNotifications \
     -Xlinker -rpath \
     -Xlinker @executable_path/Frameworks \
     -o "$app/pEpNativeNotifier"
-
-for architecture in arm64 arm64e; do
-    xcrun --sdk iphoneos clang \
-        -fobjc-arc \
-        -dynamiclib \
-        -target "${architecture}-apple-ios16.0" \
-        -isysroot "$sdk" \
-        -framework Foundation \
-        -Wl,-undefined,dynamic_lookup \
-        -Wl,-install_name,/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib \
-        "$repo_root/notifier/pep-notifier-bridge.m" \
-        -o "$native_build/pep-notifier-bridge-${architecture}.dylib"
-done
-xcrun lipo -create \
-    "$native_build/pep-notifier-bridge-arm64.dylib" \
-    "$native_build/pep-notifier-bridge-arm64e.dylib" \
-    -output "$native_build/pep-notifier-bridge.dylib"
 
 # TrollStore preserves entitlements already present on an ldid-fakesigned
 # executable. The application stores its Core Data database in this app-group
@@ -100,7 +92,6 @@ ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/pEpNativeNotifier"
 ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/$(defaults read "$app/Info" CFBundleExecutable)"
-ldid -S "$native_build/pep-notifier-bridge.dylib"
 
 mkdir -p "$artifacts/Payload"
 cp -R "$app" "$artifacts/Payload/"
@@ -114,8 +105,7 @@ rm -rf "$package"
 mkdir -p \
     "$package/DEBIAN" \
     "$package/var/jb/usr/libexec" \
-    "$package/var/jb/Library/LaunchDaemons" \
-    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries"
+    "$package/var/jb/Library/LaunchDaemons"
 
 cp "$repo_root/notifier/control" "$package/DEBIAN/control"
 cp "$repo_root/notifier/postinst" "$package/DEBIAN/postinst"
@@ -124,27 +114,21 @@ cp "$repo_root/notifier/pep-native-notifier-launcher" \
     "$package/var/jb/usr/libexec/"
 cp "$repo_root/notifier/software.pep.notifier.plist" \
     "$package/var/jb/Library/LaunchDaemons/"
-cp "$native_build/pep-notifier-bridge.dylib" \
-    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/"
-cp "$repo_root/notifier/pep-notifier-bridge.plist" \
-    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/"
 
 chmod 755 \
     "$package/DEBIAN/postinst" \
     "$package/DEBIAN/prerm" \
-    "$package/var/jb/usr/libexec/pep-native-notifier-launcher" \
-    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.dylib"
+    "$package/var/jb/usr/libexec/pep-native-notifier-launcher"
 chmod 644 \
     "$package/DEBIAN/control" \
-    "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist" \
-    "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.plist"
+    "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.0.6_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.7_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 file "$app/pEpNativeNotifier"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.0.6_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.7_iphoneos-arm64.deb"

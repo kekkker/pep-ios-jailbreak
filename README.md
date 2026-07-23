@@ -17,26 +17,24 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.0.6_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.0.7_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
 The IPA contains a small headless executable linked to the same
 `MessageModel.framework`, `PantomimeFramework.framework`, and pEp engine
 frameworks as the GUI. The Debian package installs only a launchd wrapper and a
-SpringBoard bulletin bridge. The sandboxed pEp host writes parsed notification
-payloads to its existing app-group container, which the bridge drains through a
-package-managed link. It contains no second IMAP client and never exports pEp's
-account passwords.
+launch daemon. It contains no second IMAP client and never exports pEp's account
+passwords.
 
 pEp's GUI and headless host serialize ownership of the shared app-group store.
 Launching the GUI makes the daemon commit and exit before the app initializes;
 terminating the GUI releases ownership back to launchd. New messages are parsed,
 stored, decrypted, and synchronized by pEp's normal model stack. The
-SpringBoard bridge publishes each message with a unique ID through the native
-BulletinBoard server so it is stored persistently in Notification Center and
-survives screen lock and unlock. It uses pEp's existing notification
-authorization and has no libbulletin dependency.
+headless host creates a user-notification connection explicitly scoped to
+`software.pEp.mail`, then submits unique notification requests to
+`usernotificationsd`. This uses pEp's existing notification authorization and
+creates the same persistent delivered-notification records as the GUI.
 
 Upstream pEp has its broken IMAP IDLE path disabled and currently polls using
 its own replication service, normally every ten seconds.
