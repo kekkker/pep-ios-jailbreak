@@ -17,15 +17,16 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.0.0_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.0.1_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
 The IPA contains a small headless executable linked to the same
 `MessageModel.framework`, `PantomimeFramework.framework`, and pEp engine
-frameworks as the GUI. The Debian package installs only a launchd locator and a
-SpringBoard bulletin bridge. It contains no second IMAP client and never exports
-pEp's account passwords.
+frameworks as the GUI. The Debian package installs only a launchd supervisor and
+a SpringBoard bulletin bridge. The sandboxed pEp host sends parsed notification
+payloads to that supervisor over a private pipe. It contains no second IMAP
+client and never exports pEp's account passwords.
 
 pEp's GUI and headless host serialize ownership of the shared app-group store.
 Launching the GUI makes the daemon commit and exit before the app initializes;

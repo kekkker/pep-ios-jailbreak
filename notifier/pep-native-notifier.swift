@@ -2,9 +2,6 @@ import Darwin
 import Foundation
 import MessageModel
 
-@_silgen_name("notify_post")
-private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
-
 @_silgen_name("notify_register_check")
 private func systemNotifyRegisterCheck(
     _ name: UnsafePointer<CChar>,
@@ -18,10 +15,6 @@ private func systemNotifyCheck(
 private let appGroupIdentifier = "group.software.pEp"
 private let newMessageNotification = Notification.Name("pEpNewInboxMessagePersisted")
 private let takeoverNotification = "software.pep.native-notifier.takeover"
-private let bulletinNotification = "software.pep.notifier.new-bulletin"
-private let bulletinQueue = URL(
-    fileURLWithPath: "/var/mobile/Library/Caches/software.pep.notifier/queue",
-    isDirectory: true)
 
 private func log(_ message: String) {
     FileHandle.standardError.write(Data(("pep-native-notifier: \(message)\n").utf8))
@@ -98,6 +91,13 @@ private final class NativeNotifier {
     private let providers = HeadlessProviders()
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "software.pep.native-notifier.bulletins")
+    private let bulletinFileDescriptor: Int32 = {
+        guard let value = ProcessInfo.processInfo.environment["PEP_BULLETIN_FD"],
+              let descriptor = Int32(value) else {
+            return -1
+        }
+        return descriptor
+    }()
     private var lockFileDescriptor: Int32 = -1
     private var takeoverToken: Int32 = 0
     private var takeoverTimer: Timer?
@@ -213,14 +213,11 @@ private final class NativeNotifier {
     private func queueBulletin(sender: String?, subject: String?) {
         let title = cleaned(sender, fallback: "New email", limit: 180)
         let message = cleaned(subject, fallback: "(No subject)", limit: 500)
-        queue.async { [fileManager] in
+        queue.async { [bulletinFileDescriptor] in
             do {
-                try fileManager.createDirectory(
-                    at: bulletinQueue,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700])
-                let finalURL = bulletinQueue.appendingPathComponent(
-                    "\(DispatchTime.now().uptimeNanoseconds)-\(UUID().uuidString).plist")
+                guard bulletinFileDescriptor >= 0 else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
                 let payload: [String: String] = [
                     "title": title,
                     "message": message,
@@ -230,17 +227,39 @@ private final class NativeNotifier {
                     fromPropertyList: payload,
                     format: .binary,
                     options: 0)
-                try payloadData.write(to: finalURL, options: .atomic)
-                try fileManager.setAttributes(
-                    [.posixPermissions: 0o600],
-                    ofItemAtPath: finalURL.path)
-                bulletinNotification.withCString {
-                    _ = systemNotifyPost($0)
+                var length = UInt32(payloadData.count).bigEndian
+                let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
+                guard writeAll(header, to: bulletinFileDescriptor),
+                      writeAll(payloadData, to: bulletinFileDescriptor) else {
+                    throw CocoaError(.fileWriteUnknown)
                 }
                 log("queued bulletin from pEp MessageModel")
             } catch {
                 log("unable to queue bulletin: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func writeAll(_ data: Data, to descriptor: Int32) -> Bool {
+        return data.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return data.isEmpty
+            }
+            var written = 0
+            while written < data.count {
+                let result = Darwin.write(
+                    descriptor,
+                    baseAddress.advanced(by: written),
+                    data.count - written)
+                if result < 0 {
+                    if errno == EINTR {
+                        continue
+                    }
+                    return false
+                }
+                written += result
+            }
+            return true
         }
     }
 }
