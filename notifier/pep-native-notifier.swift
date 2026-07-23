@@ -229,8 +229,8 @@ private final class NativeNotifier {
                     options: 0)
                 var length = UInt32(payloadData.count).bigEndian
                 let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-                guard writeAll(header, to: bulletinFileDescriptor),
-                      writeAll(payloadData, to: bulletinFileDescriptor) else {
+                guard self.writeAll(header, to: bulletinFileDescriptor),
+                      self.writeAll(payloadData, to: bulletinFileDescriptor) else {
                     throw CocoaError(.fileWriteUnknown)
                 }
                 log("queued bulletin from pEp MessageModel")
