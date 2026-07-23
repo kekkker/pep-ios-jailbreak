@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.2_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.3_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -60,10 +60,12 @@ process. The baseline package deliberately leaves `software.pep.notifier`
 unloaded after installation for the foreground test. Enable it only after
 foreground persistence is confirmed.
 
-Version 1.1.2 also addresses the `0xdead10cc` RunningBoard termination found
+Version 1.1.3 also addresses the `0xdead10cc` RunningBoard termination found
 during the foreground test. pEp previously started asynchronous cleanup while
 entering the background and was suspended with a Core Data/SQLite lock. It now
-stops mail services urgently before committing the session. Notification
+stops mail services, commits the session, and exits the GUI process cleanly
+before iOS can suspend it. This deterministically releases the database lock;
+launchd can then transfer mail ownership to the headless mode. Notification
 requests use documented immediate delivery (`trigger: nil`) and do not mutate
 or present a badge.
 

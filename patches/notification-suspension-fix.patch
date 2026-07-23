@@ -2,7 +2,7 @@ diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
 index 34cd5794e..45f3f2376 100644
 --- a/pEpForiOS/AppDelegate.swift
 +++ b/pEpForiOS/AppDelegate.swift
-@@ -168,8 +168,13 @@ extension AppDelegate {
+@@ -168,8 +168,18 @@ extension AppDelegate {
      /// applicationWillTerminate: when the user quits.
      func applicationDidEnterBackground(_ application: UIApplication) {
          Log.shared.info("applicationDidEnterBackground")
@@ -16,8 +16,13 @@ index 34cd5794e..45f3f2376 100644
 +        Log.shared.warn("Backgrounding: mail services stopped and session committed")
          // Make sure we do not permanently disable auto locking
          UIApplication.shared.enableAutoLockingDevice()
++        // MessageModel's stop path is asynchronous and iOS 16 otherwise
++        // suspends this process while it still owns a SQLite lock
++        // (RunningBoard 0xdead10cc). A clean GUI exit releases all locks and
++        // lets launchd transfer mail ownership to the headless mode.
++        exit(0)
      }
-@@ -632,9 +637,7 @@ private final class PEPHeadlessNotifier {
+@@ -632,9 +642,7 @@ private final class PEPHeadlessNotifier {
          let request = UNNotificationRequest(
              identifier: "pep-mail-\(UUID().uuidString)",
              content: content,
@@ -28,7 +33,7 @@ index 34cd5794e..45f3f2376 100644
          notificationCenter.add(request) { [weak self] error in
              if let error = error {
                  self?.log("native notification failed: \(error.localizedDescription)")
-@@ -667,9 +670,9 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
+@@ -667,9 +675,9 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                  withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
          Log.shared.warn("Notifications: willPresent id=%@", notification.request.identifier)
          if #available(iOS 14.0, *) {
