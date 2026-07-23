@@ -24,46 +24,7 @@ git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/compact-toolbar-unread-crash.patch"
 
 git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/notification-background-diagnostics.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/background-task-identifier.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/trollstore-legacy-background-fetch.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/near-instant-mail-notifications.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/pep-native-daemon-support.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/native-same-executable-notifications.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/preserve-delivered-notifications.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/notification-suspension-fix.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/system-managed-notification-delivery.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/system-managed-notification-exit.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/system-managed-notification-no-grace-period.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/retain-system-notification-launcher.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/frontboard-background-fetch-notifications.patch"
-
-git -C "$work_root/pEpForiOS" apply \
-    "$repo_root/patches/immediate-notification-delivery.patch"
+    "$repo_root/patches/native-background-notifications.patch"
 
 git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/stable-filtered-message-detail.patch"

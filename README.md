@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.13_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.14_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -37,82 +37,61 @@ atomically queues sender and subject in pEp's app-group container, then sends a
 real UIKit background-fetch action through FrontBoard to
 `software.pEp.mail`. The system-managed background launch submits the local
 notification and answers the fetch action without initializing the mail model
-or UI. This preserves pEp's own notification identity without fabricating a
-notification tap response, which can corrupt SpringBoard's notification-list
-reconciliation on lock and unlock.
+or UI. No notification-response object or user interaction is synthesized.
 
 Upstream pEp has its broken IMAP IDLE path disabled and currently polls using
 its own replication service, normally every ten seconds.
 
-## Notification persistence baseline
+## Production notification behavior
 
-The final `preserve-delivered-notifications.patch` overlay keeps notification
-testing free of app-initiated removal:
+The production path deliberately retains the queue and native background-fetch
+bridge described above. Queued messages are retried, and the short UIKit launch
+drains the queue through
+`application(_:performFetchWithCompletionHandler:)`. Each mail notification is
+submitted as an immediate local request with a `nil` trigger and a unique
+identifier.
 
-- pEp's badge reset is a logged no-op. This covers both launch and
-  `applicationDidBecomeActive`, which can run while opening or closing
-  Notification Center.
-- The obsolete headless migration no longer removes pending or delivered
-  requests.
-- Automatic launch canaries are suppressed; use **Settings → Test
-  Notifications** for one controlled foreground request.
-- Foreground and headless requests use unique identifiers, and successful
-  submission/presentation logs include the identifier.
+The application does not perform a migration or mass removal of pending or
+delivered notifications. Successful submission and foreground presentation are
+logged with their request identifiers. Automatic notification canaries are not
+posted; **Settings → Test Notifications** provides one explicit foreground
+test instead.
 
-Version 1.1.4 also addresses the `0xdead10cc` RunningBoard termination found
-during the foreground test. pEp previously started asynchronous cleanup while
-entering the background and was suspended with a Core Data/SQLite lock. It now
-stops mail services, commits the session, and exits the GUI process cleanly
-before iOS can suspend it. This deterministically releases the database lock;
-launchd can then transfer mail ownership to the headless mode. Notification
-requests use a one-second nonrepeating timer so iOS 16 archives an explicit
-`UNNotificationTriggerType`, and they do not mutate or present a badge.
+Badge resets remain temporarily suppressed so notification regression tests do
+not mix badge changes with list-state changes. This is a controlled baseline,
+not a claimed fix for Notification Center persistence.
 
-Version 1.1.5 replaces daemon-side notification submission with the
-system-managed delivery launch described above. Sender and subject remain in
-the notification, queued messages are retried, and the daemon still uses pEp's
-single built-in mail engine.
+The GUI is non-platform and does not have the unlimited-background entitlement.
+It retains its app group and the narrow application-launch entitlement needed
+by the delivery bridge. The GUI also stops mail services, commits its session,
+and exits cleanly when transferring ownership to the headless process, avoiding
+suspension while holding the shared Core Data/SQLite store.
 
-Version 1.1.6 exits the short-lived delivery launch synchronously after
-acknowledging the notification response. This prevents RunningBoard from
-suspending it before cleanup and ensures later messages start a fresh delivery
-cycle.
+## Confirmed Notification Center conflict
 
-Version 1.1.7 removes the unnecessary post-submission grace period. Once
-`UNUserNotificationCenter` accepts a local request, iOS owns its timer and the
-delivery process can acknowledge the launch and exit immediately.
+On the tested iPhone running iOS 16.3, the missing-history failure was caused by
+Reo 3.1.2, a SpringBoard tweak that hooks the shared
+`NCNotificationListView`. During a failure, pEp's request remained in
+`DeliveredNotifications.plist` while SpringBoard removed its group, and
+sometimes other applications' groups, from
+`NotificationListPersistentState.json`. Disabling Reo made the same production
+build survive real physical lock/unlock and Notification Center history checks.
 
-Version 1.1.8 retains the old system notification launcher for the lifetime of
-the headless engine. Its internal cleanup queue could outlive a launch
-completion, so releasing a per-message launcher risked a dangling Objective-C
-callback.
+This result does not attribute SpringBoard list corruption to pEp's local
+request, its trigger metadata, its entitlements, or the delivery bridge.
+Notification tweaks that modify the shared list should be disabled when
+validating this build.
 
-Version 1.1.9 keeps the messages currently shown by a filter in the detail
-carousel. Opening an unread message can therefore mark it read without
-immediately replacing its content with the next unread message.
+## Validation
 
-Version 1.1.10 replaces the fabricated notification-response launch with the
-real `UIFetchContentInBackgroundAction` payload used by UIKit on iOS 16.3.
-The pEp app handles that request through
-`application(_:performFetchWithCompletionHandler:)`; no fake notification or
-notification-center action is created.
+The delivery path can be exercised without sending mail by placing a unique
+payload in the app-group queue and invoking the native fetch launcher. A valid
+run receives the FrontBoard response, drains the queue, and records the request
+in pEp's delivered archive and SpringBoard's incoming list.
 
-Version 1.1.11 removes `platform-application` and unlimited-background
-entitlements from the pEp GUI. The headless mode retains only the narrow
-FrontBoard launch entitlement. Native background fetch and local notification
-delivery work without granting the GUI platform identity.
-
-Version 1.1.12 submits queued mail notifications as immediate local requests
-with a `nil` trigger. This removes the one-second timer's `RequestDate` and
-`TimeInterval` trigger metadata while retaining the real UIKit background-fetch
-launch, non-platform app identity, notification content, and destinations.
-
-Version 1.1.13 removes the disproven platform-owner notification cleanup, so an
-install never deletes pending or delivered pEp notifications. The package now
-starts the native notifier automatically after installation. Physical
-lock/unlock testing traced the Notification Center failure to Reo 3.1.2
-modifying SpringBoard's shared `NCNotificationListView`, not to pEp submission,
-trigger metadata, or notification ownership.
+Automated lock commands do not reproduce the complete user interaction.
+Notification changes must also pass repeated physical lock/unlock, reveal,
+and dismissal cycles before they are considered validated.
 
 ## License
 

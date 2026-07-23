@@ -4,8 +4,8 @@
 <dict>
 	<!-- TrollStore only supplies these Xcode-style fallback identity entitlements
 	     when an executable has no entitlements at all. Because pEp needs a custom
-	     app group, keep the fallback identity explicitly so system services such
-	     as BGTaskScheduler can associate requests with the installed app. -->
+	     app group, declaring custom entitlements suppresses that fallback. Keep
+	     the fallback identity and keychain groups explicitly alongside it. -->
 	<key>application-identifier</key>
 	<string>TROLLTROLL.*</string>
 	<key>com.apple.developer.team-identifier</key>

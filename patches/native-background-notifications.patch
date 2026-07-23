@@ -1,0 +1,1321 @@
+diff --git a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift
+index 49d269864417dd7369d4d72e9737535724959275..48681a97281c4c782cdcb7e7645a9dcd437d1b13 100644
+--- a/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift
++++ b/SubProjects/MessageModel/MessageModel/MessageModel/Services/NetworkService/Model/CoreDataPantomimeAdapter.swift
+@@ -364,10 +364,32 @@ extension CoreDataPantomimeAdapter: CWIMAPCache {
+                     Log.shared.errorAndCrash("Need an existing account")
+                     return
+             }
+-            CdMessage.insertOrUpdate(pantomimeMessage: message,
+-                                     account: cdAccount,
+-                                     messageUpdate: messageUpdate,
+-                                     context: me.privateMOC)
++            // Only a previously unseen UID above the Inbox high-water mark is a newly
++            // delivered message. This excludes flag updates, message re-downloads and
++            // older messages fetched while the user scrolls through their mailbox.
++            let previousHighestUID = me.cdFolder.lastUID(context: me.privateMOC)
++            let isNewInboxMessage = me.cdFolder.folderType == .inbox &&
++                previousHighestUID > 0 &&
++                message.uid() > previousHighestUID &&
++                me.cdMessage(withUID: message.uid()) == nil
++            let insertedMessage = CdMessage.insertOrUpdate(
++                pantomimeMessage: message,
++                account: cdAccount,
++                messageUpdate: messageUpdate,
++                context: me.privateMOC)
++            if isNewInboxMessage {
++                let sender = insertedMessage?.from?.userName ??
++                    insertedMessage?.from?.address ??
++                    "New email"
++                let subject = insertedMessage?.shortMessage ?? "(No subject)"
++                NotificationCenter.default.post(
++                    name: Notification.Name("pEpNewInboxMessagePersisted"),
++                    object: nil,
++                    userInfo: [
++                        "sender": sender,
++                        "subject": subject
++                    ])
++            }
+         }
+     }
+ }
+diff --git a/SubProjects/MessageModel/MessageModel/MessageModel/Services/Utils/BackgroundTaskManager.swift b/SubProjects/MessageModel/MessageModel/MessageModel/Services/Utils/BackgroundTaskManager.swift
+index 1b653d62fe5f3bff1e3a9e27710418697205511f..7a49fa7a9192f89007972a38a41cb4e5df045207 100644
+--- a/SubProjects/MessageModel/MessageModel/MessageModel/Services/Utils/BackgroundTaskManager.swift
++++ b/SubProjects/MessageModel/MessageModel/MessageModel/Services/Utils/BackgroundTaskManager.swift
+@@ -69,6 +69,10 @@ extension BackgroundTaskManager {
+ class BackgroundTaskManager {
+     /// Bookholding: task IDs for clients.
+     private var runningTasks = [AnyHashable:UIBackgroundTaskIdentifier]()
++
++    private var isRunningHeadless: Bool {
++        return ProcessInfo.processInfo.environment["PEP_HEADLESS_NOTIFIER"] == "1"
++    }
+ }
+ 
+ // MARK: - BackgroundTaskManagerProtocol
+@@ -85,6 +89,13 @@ extension BackgroundTaskManager: BackgroundTaskManagerProtocol {
+             throw BackgroundTaskManager.ManagingError.backgroundTaskAlreadyRunning
+         }
+ 
++        // The jailbreak daemon is not a UIApplication and must not ask UIKit for
++        // background execution time. launchd owns its lifetime instead.
++        if isRunningHeadless {
++            runningTasks[client] = .invalid
++            return
++        }
++
+         let createe = UIApplication.shared.beginBackgroundTask(withName: "\(client)") { [weak self]  in
+             guard let me = self else {
+                 Log.shared.errorAndCrash("Lost myself")
+@@ -120,6 +131,9 @@ extension BackgroundTaskManager: BackgroundTaskManagerProtocol {
+             // We are not aware of a running task for this client. Throw!
+             throw BackgroundTaskManager.ManagingError.unknownClient
+         }
++        if isRunningHeadless {
++            return
++        }
+         UIApplication.shared.endBackgroundTask(endedTaskID)
+         Log.shared.info("Did end backgroundtask with id: %@ for service: %@",
+         "\(endedTaskID)", client.debugDescription)
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+index aa53bc1130e0b01e6b4b4758573587af47b258d2..34533859c6e7a95c680ea828f2c64e04e77e5b34 100644
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -6,16 +6,174 @@
+ //  Copyright © 2016 p≡p Security S.A. All rights reserved.
+ //
+ 
+-import BackgroundTasks
++import Darwin
++import UserNotifications
+ 
+ import pEpIOSToolbox
+ import MessageModel
+ import pEp4iosIntern
++@_silgen_name("notify_post")
++private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
++
++@_silgen_name("notify_register_check")
++private func systemNotifyRegisterCheck(
++    _ name: UnsafePointer<CChar>,
++    _ token: UnsafeMutablePointer<Int32>) -> UInt32
++
++@_silgen_name("notify_check")
++private func systemNotifyCheck(
++    _ token: Int32,
++    _ changed: UnsafeMutablePointer<Int32>) -> UInt32
++
++private struct PEPQueuedNotification: Codable {
++    let identifier: String
++    let title: String
++    let body: String
++}
++
++private enum PEPNotificationDeliveryQueue {
++    private static let appGroupIdentifier = "group.software.pEp"
++    private static let directoryName = "notification-delivery-queue"
++
++    static var hasPendingNotifications: Bool {
++        return !queuedFiles().isEmpty
++    }
++
++    static func enqueue(title: String, body: String) -> Bool {
++        guard let directory = queueDirectory(create: true) else {
++            return false
++        }
++        let payload = PEPQueuedNotification(
++            identifier: "pep-mail-\(UUID().uuidString)",
++            title: title,
++            body: body)
++        let url = directory
++            .appendingPathComponent(payload.identifier)
++            .appendingPathExtension("json")
++        do {
++            try JSONEncoder().encode(payload).write(to: url, options: .atomic)
++            return true
++        } catch {
++            NSLog("pEp notification queue: enqueue failed: %@", "\(error)")
++            return false
++        }
++    }
++
++    static func deliverAll(completion: @escaping () -> Void) {
++        let files = queuedFiles()
++        guard !files.isEmpty else {
++            completion()
++            return
++        }
++
++        let center = UNUserNotificationCenter.current()
++        let group = DispatchGroup()
++        for file in files {
++            let payload: PEPQueuedNotification
++            do {
++                payload = try JSONDecoder().decode(
++                    PEPQueuedNotification.self,
++                    from: Data(contentsOf: file))
++            } catch {
++                NSLog("pEp notification queue: invalid payload: %@", "\(error)")
++                try? FileManager.default.removeItem(at: file)
++                continue
++            }
++
++            let content = UNMutableNotificationContent()
++            content.title = payload.title
++            content.body = payload.body
++            content.sound = .default
++            content.interruptionLevel = .active
++            // This is an immediate request; no scheduling trigger is required.
++            let request = UNNotificationRequest(
++                identifier: payload.identifier,
++                content: content,
++                trigger: nil)
++
++            group.enter()
++            center.add(request) { error in
++                if let error = error {
++                    NSLog("pEp notification queue: delivery failed: %@",
++                          error.localizedDescription)
++                } else {
++                    try? FileManager.default.removeItem(at: file)
++                }
++                group.leave()
++            }
++        }
++
++        group.notify(queue: .main) {
++            completion()
++        }
++    }
++
++    private static func queuedFiles() -> [URL] {
++        guard let directory = queueDirectory(create: false) else {
++            return []
++        }
++        return (try? FileManager.default.contentsOfDirectory(
++            at: directory,
++            includingPropertiesForKeys: nil,
++            options: [.skipsHiddenFiles]))?
++            .filter { $0.pathExtension == "json" }
++            .sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
++    }
++
++    private static func queueDirectory(create: Bool) -> URL? {
++        guard let container = FileManager.default.containerURL(
++            forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
++            return nil
++        }
++        let directory = container.appendingPathComponent(
++            directoryName,
++            isDirectory: true)
++        if create {
++            do {
++                try FileManager.default.createDirectory(
++                    at: directory,
++                    withIntermediateDirectories: true,
++                    attributes: nil)
++            } catch {
++                NSLog("pEp notification queue: directory failed: %@", "\(error)")
++                return nil
++            }
++        }
++        return directory
++    }
++}
++
++@main
++private enum PEPApplicationMain {
++    static func main() {
++        if ProcessInfo.processInfo.environment["PEP_HEADLESS_NOTIFIER"] == "1" {
++            PEPHeadlessNotifier().run()
++        }
++        UIApplicationMain(
++            CommandLine.argc,
++            CommandLine.unsafeArgv,
++            nil,
++            NSStringFromClass(AppDelegate.self))
++    }
++}
+ 
+-@UIApplicationMain
+ class AppDelegate: UIResponder, UIApplicationDelegate {
+     var window: UIWindow?
+ 
++    private var newMailObserver: NSObjectProtocol?
++    private var pendingNewMailCount = 0
++    private var pendingNewMailSender = "New email"
++    private var pendingNewMailSubject = "(No subject)"
++    private var newMailNotificationWorkItem: DispatchWorkItem?
++    private let daemonOwnership = PEPDaemonOwnership()
++    private var deferredNormalLaunch: DispatchWorkItem?
++    private var normalLaunchStarted = false
++    private var isSystemNotificationDeliveryLaunch = false
++    private var notificationDeliveryStarted = false
++    private var notificationDeliveryCompleted = false
++    private var notificationFetchCompletion:
++        ((UIBackgroundFetchResult) -> Void)?
++
+     /// The model
+     private var messageModelService: MessageModelServiceProtocol?
+ 
+@@ -81,28 +239,51 @@ extension AppDelegate {
+             // and pretty much don't do anything.
+             return false
+         }
+-        Log.shared.verboseLoggingEnabled = AppSettings.shared.verboseLogginEnabled
+-
+-        Log.shared.logDebugInfo()
+-
+-        if #available(iOS 13.0, *) {
+-            Log.shared.info("BGAppRefreshTask: Registering BGTaskScheduler.shared.register(forTaskWithIdentifier: ...")
+-            BGTaskScheduler.shared.register(forTaskWithIdentifier: Constants.appRefreshTaskBackgroundtaskBackgroundfetchSchedulerid,
+-                                            using: nil) { [weak self] task in
+-                guard let me = self else {
+-                    Log.shared.errorAndCrash("BGAppRefreshTask: Lost myself")
++        if PEPNotificationDeliveryQueue.hasPendingNotifications {
++            UNUserNotificationCenter.current().delegate = self
++            let workItem = DispatchWorkItem { [weak self] in
++                guard let self = self,
++                      !self.isSystemNotificationDeliveryLaunch else {
+                     return
+                 }
+-                me.handleAppRefreshTask(task as! BGAppRefreshTask)
++                _ = self.completeNormalLaunch(
++                    application,
++                    launchOptions: launchOptions)
++                PEPNotificationDeliveryQueue.deliverAll {}
+             }
+-        } else {
+-            Log.shared.info("BGAppRefreshTask: we are < iOS13. Fallback to BackgroundFetch ...")
+-            application.setMinimumBackgroundFetchInterval(60.0 * 2)
++            deferredNormalLaunch = workItem
++            DispatchQueue.main.asyncAfter(
++                deadline: .now() + 2.0,
++                execute: workItem)
++            return true
++        }
++        return completeNormalLaunch(application, launchOptions: launchOptions)
++    }
++
++    private func completeNormalLaunch(
++        _ application: UIApplication,
++        launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
++        normalLaunchStarted = true
++        guard daemonOwnership.acquireForGUI() else {
++            return false
+         }
++        Log.shared.verboseLoggingEnabled = AppSettings.shared.verboseLogginEnabled
++
++        Log.shared.logDebugInfo()
++
++        UNUserNotificationCenter.current().delegate = self
++
++        // BGTaskScheduler silently discards requests from TrollStore-fakesigned apps on iOS 16.
++        // Use the legacy fetch API, which remains supported when the permitted-identifiers key is
++        // absent from Info.plist. The system still decides the actual delivery time.
++        application.setMinimumBackgroundFetchInterval(UIApplication.backgroundFetchIntervalMinimum)
++        Log.shared.warn("BackgroundFetch: enabled; status=%@",
++                        backgroundRefreshStatusDescription)
+ 
+         Appearance.setup()
+         setupServices()
+         askUserForNotificationPermissions()
++        observePersistedInboxMessages()
+         var result = setupInitialViewController()
+ 
+         if let openedToOpenFile = launchOptions?[UIApplication.LaunchOptionsKey.url] as? URL {
+@@ -136,13 +317,23 @@ extension AppDelegate {
+     /// applicationWillTerminate: when the user quits.
+     func applicationDidEnterBackground(_ application: UIApplication) {
+         Log.shared.info("applicationDidEnterBackground")
++        if isSystemNotificationDeliveryLaunch {
++            return
++        }
++        // `finish()` starts asynchronous cleanup and IMAP work. On iOS 16 the
++        // process can then be suspended while Core Data still owns a SQLite
++        // lock, which RunningBoard terminates as 0xdead10cc. Stop urgently
++        // before committing instead.
++        messageModelService?.stop()
+         Session.main.commit()
+-        messageModelService?.finish()
++        Log.shared.warn("Backgrounding: mail services stopped and session committed")
+         // Make sure we do not permanently disable auto locking
+         UIApplication.shared.enableAutoLockingDevice()
+-        if #available(iOS 13.0, *) {
+-            scheduleAppRefresh()
+-        }
++        // MessageModel's stop path is asynchronous and iOS 16 otherwise
++        // suspends this process while it still owns a SQLite lock
++        // (RunningBoard 0xdead10cc). A clean GUI exit releases all locks and
++        // lets launchd transfer mail ownership to the headless mode.
++        exit(0)
+     }
+ 
+     /// Called as part of the transition from the background to the inactive state; here you can
+@@ -161,10 +352,41 @@ extension AppDelegate {
+             // Do nothing if unit tests are running
+             return
+         }
++        if isSystemNotificationDeliveryLaunch {
++            return
++        }
+         UserNotificationTool.resetApplicationIconBadgeNumber()
+         messageModelService?.start()
+     }
+ 
++    private func beginSystemNotificationDelivery() {
++        guard !notificationDeliveryStarted else {
++            return
++        }
++        isSystemNotificationDeliveryLaunch = true
++        notificationDeliveryStarted = true
++        deferredNormalLaunch?.cancel()
++        deferredNormalLaunch = nil
++        PEPNotificationDeliveryQueue.deliverAll { [weak self] in
++            guard let self = self else {
++                return
++            }
++            self.notificationDeliveryCompleted = true
++            self.finishSystemNotificationDeliveryIfPossible()
++        }
++    }
++
++    private func finishSystemNotificationDeliveryIfPossible() {
++        guard notificationDeliveryCompleted,
++              let completion = notificationFetchCompletion else {
++            return
++        }
++        notificationFetchCompletion = nil
++        notificationDeliveryStarted = false
++        notificationDeliveryCompleted = false
++        completion(.newData)
++    }
++
+     /// Called when the application is about to terminate. Save data if appropriate. See also
+     /// applicationDidEnterBackground:.
+     /// Saves changes in the application's managed object context before the application terminates.
+@@ -176,39 +398,37 @@ extension AppDelegate {
+ 
+     func application(_ application: UIApplication, performFetchWithCompletionHandler
+                         completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+-        if #available(iOS 13.0, *) {
+-            // According to Apple docs:
+-            //
+-            // "Adding a BGTaskSchedulerPermittedIdentifiers key to the
+-            // Info.plist disables application(_:performFetchWithCompletionHandler:) and
+-            // setMinimumBackgroundFetchInterval(_:) in iOS 13 and later."
+-            //
+-            // This method is called anyway by the OS. Which is a contradiction imo.
+-            Log.shared.warn("BGAppRefreshTask: Should not be called on iOS>=13. Should use BGTaskScheduler defined method instead")
+-            // Do nothing. We use different API (BGTaskScheduler) for iOS13 and up.
++        if PEPNotificationDeliveryQueue.hasPendingNotifications &&
++            !normalLaunchStarted {
++            Log.shared.warn(
++                "BackgroundFetch: delivering queued native notifications")
++            notificationFetchCompletion = completionHandler
++            beginSystemNotificationDelivery()
++            finishSystemNotificationDeliveryIfPossible()
++            return
++        }
++
++        Log.shared.warn("BackgroundFetch: started by iOS")
++        guard let messageModelService = messageModelService else {
++            Log.shared.error("BackgroundFetch: no message model service")
+             completionHandler(.failed)
+-        } else {
+-            Log.shared.info("BGAppRefreshTask: we are < iOS13. Fallback to BackgroundFetch ...")
+-            guard let messageModelService = messageModelService else {
+-                Log.shared.error("no networkService")
++            return
++        }
++
++        messageModelService.checkForNewMails_old() { [weak self] numMails in
++            guard let self = self, let numMails = numMails else {
++                Log.shared.warn("BackgroundFetch: mail check failed")
+                 completionHandler(.failed)
+                 return
+             }
+-
+-            messageModelService.checkForNewMails_old() {[unowned self] (numMails: Int?) in
+-                var result = UIBackgroundFetchResult.failed
+-                defer { completionHandler(result)}
+-                guard let numMails = numMails else {
+-                    result = .failed
+-                    return
+-                }
+-                switch numMails {
+-                case 0:
+-                    result = .noData
+-                default:
+-                    self.informUser(numNewMails: numMails) {
+-                        result = .newData
+-                    }
++            if numMails == 0 {
++                Log.shared.warn("BackgroundFetch: completed with no new mail")
++                completionHandler(.noData)
++            } else {
++                self.informUser(numNewMails: numMails) {
++                    Log.shared.warn("BackgroundFetch: delivered notification for %d new messages",
++                                    numMails)
++                    completionHandler(.newData)
+                 }
+             }
+         }
+@@ -230,67 +450,370 @@ extension AppDelegate {
+     }
+ }
+ 
+-// MARK: - BGAppRefreshTask
++// MARK: - Background Fetch
+ 
+ extension AppDelegate {
+ 
+-    @available(iOS 13, *)
+-    private func handleAppRefreshTask(_ task: BGAppRefreshTask) {
+-        // Schedule a new refresh task
+-        scheduleAppRefresh()
++    private var backgroundRefreshStatusDescription: String {
++        switch UIApplication.shared.backgroundRefreshStatus {
++        case .available:
++            return "available"
++        case .denied:
++            return "denied"
++        case .restricted:
++            return "restricted"
++        @unknown default:
++            return "unknown"
++        }
++    }
++}
+ 
+-        guard let messageModelService = messageModelService else {
+-            Log.shared.error("BGAppRefreshTask: no networkService")
+-            task.setTaskCompleted(success: false)
+-            return
++// MARK: - User Notifiation
++
++extension AppDelegate {
++    private func observePersistedInboxMessages() {
++        newMailObserver = NotificationCenter.default.addObserver(
++            forName: Notification.Name("pEpNewInboxMessagePersisted"),
++            object: nil,
++            queue: .main) { [weak self] notification in
++                let sender = notification.userInfo?["sender"] as? String
++                let subject = notification.userInfo?["subject"] as? String
++                self?.queueNewMailNotification(sender: sender, subject: subject)
++            }
++    }
++
++    private func queueNewMailNotification(sender: String?, subject: String?) {
++        pendingNewMailCount += 1
++        pendingNewMailSender = sender?.isEmpty == false ? sender! : "New email"
++        pendingNewMailSubject = subject?.isEmpty == false ? subject! : "(No subject)"
++        newMailNotificationWorkItem?.cancel()
++
++        let workItem = DispatchWorkItem { [weak self] in
++            guard let me = self else {
++                return
++            }
++            let count = me.pendingNewMailCount
++            me.pendingNewMailCount = 0
++            me.newMailNotificationWorkItem = nil
++            UserNotificationTool.postUserNotification(
++                sender: me.pendingNewMailSender,
++                subject: me.pendingNewMailSubject,
++                count: count)
++            Log.shared.warn("Notifications: requested for %d newly persisted Inbox message(s)",
++                            count)
++        }
++        newMailNotificationWorkItem = workItem
++        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: workItem)
++    }
++
++    private func informUser(numNewMails:Int, completion: @escaping ()->()) {
++        GCD.onMain {
++            UserNotificationTool.postUserNotification(forNumNewMails: numNewMails)
++            completion()
++        }
++    }
++}
++
++/// Serializes access to pEp's Core Data store between the GUI process and the
++/// jailbreak daemon. The GUI asks the daemon to stop, then waits until the
++/// daemon has committed and exited before constructing MessageModel.
++private final class PEPDaemonOwnership {
++    private static let appGroupIdentifier = "group.software.pEp"
++    private static let takeoverNotification = "software.pep.native-notifier.takeover"
++    private var lockFileDescriptor: Int32 = -1
++
++    func acquireForGUI() -> Bool {
++        guard lockFileDescriptor == -1 else {
++            return true
++        }
++        guard let container = FileManager.default.containerURL(
++            forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier) else {
++            NSLog("pEp daemon ownership: app-group container unavailable")
++            return false
++        }
++
++        let lockURL = container.appendingPathComponent("pep-mail-engine.lock")
++        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
++        guard descriptor >= 0 else {
++            NSLog("pEp daemon ownership: unable to open lock file (errno %d)", errno)
++            return false
+         }
+ 
+-        task.expirationHandler = {
+-            messageModelService.cancelCheckForNewMails_old()
++        Self.takeoverNotification.withCString {
++            _ = systemNotifyPost($0)
+         }
++        while flock(descriptor, LOCK_EX) != 0 {
++            if errno != EINTR {
++                NSLog("pEp daemon ownership: unable to acquire lock (errno %d)", errno)
++                close(descriptor)
++                return false
++            }
++        }
++        lockFileDescriptor = descriptor
++        return true
++    }
++
++    deinit {
++        if lockFileDescriptor >= 0 {
++            close(lockFileDescriptor)
++        }
++    }
++}
++
++// MARK: - Native Headless Mail Engine
++
++private final class PEPHeadlessProviders:
++    CNContactsAccessPermissionProviderProtocol,
++    EncryptionErrorDelegate,
++    KeySyncStateProvider,
++    PassphraseProviderProtocol,
++    UsePEPFolderProviderProtocol {
+ 
+-        Log.shared.info("BGAppRefreshTask: Start checking for new mails")
+-        messageModelService.checkForNewMails_old() { [unowned self] (numMails: Int?) in
+-            var success = false
+-            defer { task.setTaskCompleted(success: success) }
+-            guard let numMails = numMails else {
+-                Log.shared.error("BGAppRefreshTask: checkForNewMails returned nil")
+-                success = false
++    private let defaults: UserDefaults
++
++    var stateChangeHandler: ((Bool) -> Void)?
++
++    init() {
++        defaults = UserDefaults(suiteName: "group.software.pEp") ?? .standard
++        defaults.register(defaults: [
++            "keyStartpEpSync": true,
++            "keyUsePEPFolderEnabled": true,
++            "keyUnencryptedSubjectEnabled": false,
++            "keyPassiveMode": false,
++            "keyUserHasBeenAskedForContactAccessPermissions": false
++        ])
++    }
++
++    var isKeySyncEnabled: Bool {
++        defaults.bool(forKey: "keyStartpEpSync")
++    }
++
++    var usePepFolder: Bool {
++        defaults.bool(forKey: "keyUsePEPFolderEnabled")
++    }
++
++    var userHasBeenAskedForContactAccessPermissions: Bool {
++        defaults.bool(forKey: "keyUserHasBeenAskedForContactAccessPermissions")
++    }
++
++    func applyEngineSettings() {
++        MessageModelConfig.setUnEncryptedSubjectEnabled(
++            defaults.bool(forKey: "keyUnencryptedSubjectEnabled"))
++        MessageModelConfig.setPassiveModeEnabled(
++            defaults.bool(forKey: "keyPassiveMode"))
++    }
++
++    func showEnterPassphrase(triggeredWhilePEPSync: Bool,
++                             completion: @escaping (String?) -> Void) {
++        completion(nil)
++    }
++
++    func showWrongPassphrase(completion: @escaping (String?) -> Void) {
++        completion(nil)
++    }
++
++    func showPassphraseTooLong(completion: @escaping (String?) -> Void) {
++        completion(nil)
++    }
++
++    func handleCouldNotEncrypt(completion: @escaping (Bool) -> Void) {
++        completion(false)
++    }
++}
++
++private final class PEPHeadlessNotifier {
++    private static let appGroupIdentifier = "group.software.pEp"
++    private static let newMessageNotification =
++        Notification.Name("pEpNewInboxMessagePersisted")
++    private static let takeoverNotification =
++        "software.pep.native-notifier.takeover"
++
++    private let providers = PEPHeadlessProviders()
++    private let fileManager = FileManager.default
++    private var lockFileDescriptor: Int32 = -1
++    private var takeoverToken: Int32 = 0
++    private var takeoverTimer: Timer?
++    private var newMailObserver: NSObjectProtocol?
++    private var service: MessageModelService?
++    private var isStopping = false
++    private var notificationLaunchInFlight = false
++
++    func run() -> Never {
++        log("starting as \(Bundle.main.bundleIdentifier ?? "unknown bundle")")
++        registerForTakeover()
++        acquireMailEngineOwnership()
++
++        providers.applyEngineSettings()
++        newMailObserver = NotificationCenter.default.addObserver(
++            forName: Self.newMessageNotification,
++            object: nil,
++            queue: nil) { [weak self] notification in
++                let sender = notification.userInfo?["sender"] as? String
++                let subject = notification.userInfo?["subject"] as? String
++                self?.postNotification(sender: sender, subject: subject)
++            }
++
++        let modelService = MessageModelService(
++            cnContactsAccessPermissionProvider: providers,
++            keySyncStateProvider: providers,
++            usePEPFolderProvider: providers,
++            passphraseProvider: providers,
++            encryptionErrorDelegate: providers)
++        service = modelService
++        modelService.start()
++        startTakeoverTimer()
++        log("pEp MessageModel started")
++
++        RunLoop.main.run()
++        fatalError("main run loop unexpectedly returned")
++    }
++
++    private func registerForTakeover() {
++        let status = Self.takeoverNotification.withCString {
++            systemNotifyRegisterCheck($0, &takeoverToken)
++        }
++        guard status == 0 else {
++            log("failed to register GUI takeover notification")
++            exit(70)
++        }
++        var ignored: Int32 = 0
++        systemNotifyCheck(takeoverToken, &ignored)
++    }
++
++    private func acquireMailEngineOwnership() {
++        guard let container = fileManager.containerURL(
++            forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier) else {
++            log("app-group container unavailable")
++            exit(71)
++        }
++
++        let lockURL = container.appendingPathComponent("pep-mail-engine.lock")
++        lockFileDescriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
++        guard lockFileDescriptor >= 0 else {
++            log("unable to open ownership lock (errno \(errno))")
++            exit(72)
++        }
++
++        while flock(lockFileDescriptor, LOCK_EX | LOCK_NB) != 0 {
++            if errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR {
++                log("unable to acquire ownership lock (errno \(errno))")
++                exit(73)
++            }
++            if takeoverWasRequested() {
++                log("GUI owns mail engine; waiting for next launchd restart")
++                exit(0)
++            }
++            usleep(250_000)
++        }
++
++        if takeoverWasRequested() {
++            log("GUI requested ownership during startup")
++            exit(0)
++        }
++    }
++
++    private func startTakeoverTimer() {
++        takeoverTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) {
++            [weak self] _ in
++            guard let self = self, self.takeoverWasRequested() else {
+                 return
+             }
+-            switch numMails {
+-            case 0:
+-                Log.shared.info("BGAppRefreshTask: Server reported zero new mails")
+-                success = true
+-            default:
+-                self.informUser(numNewMails: numMails) {
+-                    Log.shared.info("BGAppRefreshTask: Server reported %d new mails", numMails)
+-                    success = true
++            self.stopForGUI()
++        }
++    }
++
++    private func takeoverWasRequested() -> Bool {
++        var changed: Int32 = 0
++        guard systemNotifyCheck(takeoverToken, &changed) == 0 else {
++            return false
++        }
++        return changed != 0
++    }
++
++    private func stopForGUI() {
++        guard !isStopping else {
++            return
++        }
++        isStopping = true
++        log("handing pEp MessageModel ownership to GUI")
++        takeoverTimer?.invalidate()
++        service?.stop()
++        Session.main.commit()
++        usleep(250_000)
++        exit(0)
++    }
++
++    private func postNotification(sender: String?, subject: String?) {
++        let title = cleaned(sender, fallback: "New email", limit: 180)
++        let body = cleaned(subject, fallback: "(No subject)", limit: 500)
++        guard PEPNotificationDeliveryQueue.enqueue(title: title, body: body) else {
++            log("unable to queue system-managed notification delivery")
++            return
++        }
++        launchNotificationDeliveryIfNeeded()
++    }
++
++    private func launchNotificationDeliveryIfNeeded() {
++        guard !notificationLaunchInFlight else {
++            return
++        }
++        notificationLaunchInFlight = true
++        PEPLaunchNotificationDelivery { [weak self] launched in
++            DispatchQueue.main.async {
++                guard let self = self else {
++                    return
++                }
++                self.notificationLaunchInFlight = false
++                self.log(launched
++                    ? "requested system-managed pEp notification delivery"
++                    : "system-managed pEp notification launch failed")
++                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
++                    guard PEPNotificationDeliveryQueue.hasPendingNotifications else {
++                        return
++                    }
++                    self.launchNotificationDeliveryIfNeeded()
+                 }
+             }
+         }
++        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
++            [weak self] in
++            guard let self = self,
++                  self.notificationLaunchInFlight,
++                  PEPNotificationDeliveryQueue.hasPendingNotifications else {
++                return
++            }
++            self.notificationLaunchInFlight = false
++            self.log("native background fetch action timed out; retrying")
++            self.launchNotificationDeliveryIfNeeded()
++        }
+     }
+ 
+-    @available(iOS 13, *)
+-    func scheduleAppRefresh() {
+-        let request = BGAppRefreshTaskRequest(identifier: Constants.appRefreshTaskBackgroundtaskBackgroundfetchSchedulerid)
+-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60.0 * 2)
+-        do {
+-            Log.shared.info("BGAppRefreshTask: scheduleAppRefresh() called")
+-            try BGTaskScheduler.shared.submit(request)
+-        } catch {
+-            Log.shared.warn("BGAppRefreshTask: Could not schedule app refresh: %@. If error is \"1\" (BGTaskScheduler.Error.unavailable), possible causes are: \n- You are on simulater (background fetch not supported any more)\n- The user has disabled background refresh in settings\n- The extension either hasn’t set RequestsOpenAccess to YES in The Info.plist File, or the user hasn’t granted open access", error.localizedDescription)
+-        }
++    private func cleaned(_ value: String?,
++                         fallback: String,
++                         limit: Int) -> String {
++        let result = (value ?? "")
++            .split(whereSeparator: { $0.isWhitespace })
++            .joined(separator: " ")
++        return String((result.isEmpty ? fallback : result).prefix(limit))
++    }
++
++    private func log(_ message: String) {
++        FileHandle.standardError.write(
++            Data(("pep-native-notifier: \(message)\n").utf8))
+     }
+ }
+ 
+-// MARK: - User Notifiation
++// MARK: - Foreground Notifications
+ 
+-extension AppDelegate {
+-    private func informUser(numNewMails:Int, completion: @escaping ()->()) {
+-        GCD.onMain {
+-            UserNotificationTool.postUserNotification(forNumNewMails: numNewMails)
+-            completion()
++extension AppDelegate: UNUserNotificationCenterDelegate {
++    func userNotificationCenter(_ center: UNUserNotificationCenter,
++                                willPresent notification: UNNotification,
++                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
++        Log.shared.warn("Notifications: willPresent id=%@", notification.request.identifier)
++        if #available(iOS 14.0, *) {
++            completionHandler([.banner, .list, .sound])
++        } else {
++            completionHandler([.alert, .sound])
+         }
+     }
+ }
+diff --git a/pEpForiOS/Info.plist b/pEpForiOS/Info.plist
+index 490ace3d21493bb9a8b09f59f83aa25bd46836f4..93c07bf0f22bb897a38202c2ad4ad06680e11a8f 100644
+--- a/pEpForiOS/Info.plist
++++ b/pEpForiOS/Info.plist
+@@ -2,10 +2,6 @@
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+-	<key>BGTaskSchedulerPermittedIdentifiers</key>
+-	<array>
+-		<string>security.pep.pep4ios.backgroundtaskschedulerid.backgroundfetch</string>
+-	</array>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>en_US</string>
+ 	<key>CFBundleDisplayName</key>
+diff --git a/pEpForiOS/PEPNotificationLauncher.h b/pEpForiOS/PEPNotificationLauncher.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4a53687026b60cd918cac8210096cbfd14295e0
+--- /dev/null
++++ b/pEpForiOS/PEPNotificationLauncher.h
+@@ -0,0 +1,84 @@
++#ifndef PEPNotificationLauncher_h
++#define PEPNotificationLauncher_h
++
++#import <Foundation/Foundation.h>
++#import <dlfcn.h>
++#import <objc/message.h>
++
++typedef id (*PEPNoArgumentObjectMessage)(id, SEL);
++typedef id (*PEPOneObjectFactory)(id, SEL, id);
++typedef void (*PEPOpenApplicationMessage)(id, SEL, id, id, id);
++
++NS_INLINE NSString *PEPFrontBoardStringSymbol(
++    void *handle,
++    const char *name) {
++    void *symbol = dlsym(handle, name);
++    return symbol == NULL ? nil : *(__unsafe_unretained NSString **)symbol;
++}
++
++NS_INLINE void PEPKeepBackgroundFetchActionAlive(id action) {
++    static id activeAction;
++    activeAction = action;
++}
++
++NS_INLINE void PEPLaunchNotificationDelivery(
++    void (^completion)(BOOL launched)) {
++    void *frontBoard = dlopen(
++        "/System/Library/PrivateFrameworks/"
++        "FrontBoardServices.framework/FrontBoardServices",
++        RTLD_LAZY);
++    void *uiKit = dlopen(
++        "/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore",
++        RTLD_LAZY);
++    Class actionClass =
++        NSClassFromString(@"UIFetchContentInBackgroundAction");
++    Class optionsClass = NSClassFromString(@"FBSOpenApplicationOptions");
++    Class serviceClass = NSClassFromString(@"FBSOpenApplicationService");
++    NSString *actionsKey = PEPFrontBoardStringSymbol(
++        frontBoard,
++        "FBSOpenApplicationOptionKeyActions");
++    NSString *activateSuspendedKey = PEPFrontBoardStringSymbol(
++        frontBoard,
++        "FBSOpenApplicationOptionKeyActivateSuspended");
++    if (frontBoard == NULL || uiKit == NULL || actionClass == Nil ||
++        optionsClass == Nil || serviceClass == Nil || actionsKey == nil ||
++        activateSuspendedKey == nil) {
++        completion(NO);
++        return;
++    }
++
++    void (^actionHandler)(void) = ^{
++        PEPKeepBackgroundFetchActionAlive(nil);
++        completion(YES);
++    };
++    id action = ((PEPOneObjectFactory)objc_msgSend)(
++        [actionClass alloc],
++        NSSelectorFromString(@"initWithHandler:"),
++        actionHandler);
++    NSDictionary *dictionary = @{
++        actionsKey: @[action],
++        activateSuspendedKey: @YES
++    };
++    id options = ((PEPOneObjectFactory)objc_msgSend)(
++        optionsClass,
++        NSSelectorFromString(@"optionsWithDictionary:"),
++        dictionary);
++    id service = ((PEPNoArgumentObjectMessage)objc_msgSend)(
++        serviceClass,
++        NSSelectorFromString(@"serviceWithDefaultShellEndpoint"));
++    if (action == nil || options == nil || service == nil) {
++        completion(NO);
++        return;
++    }
++    PEPKeepBackgroundFetchActionAlive(action);
++
++    void (^openCompletion)(void) = ^{};
++    ((PEPOpenApplicationMessage)objc_msgSend)(
++        service,
++        NSSelectorFromString(@"openApplication:withOptions:completion:"),
++        @"software.pEp.mail",
++        options,
++        openCompletion);
++}
++
++#endif /* PEPNotificationLauncher_h */
+diff --git a/pEpForiOS/UI/Settings/SettingsTableViewController.swift b/pEpForiOS/UI/Settings/SettingsTableViewController.swift
+index 0cdb459cb7d90f482e8aaad697a22e51d1780297..f662fa88b94d44e988e526baac574df512d44150 100644
+--- a/pEpForiOS/UI/Settings/SettingsTableViewController.swift
++++ b/pEpForiOS/UI/Settings/SettingsTableViewController.swift
+@@ -138,7 +138,8 @@ extension SettingsTableViewController {
+              .trustedServer,
+              .extraKeys,
+              .tutorial,
+-             .exportDBs:
++             .exportDBs,
++             .notificationTest:
+             guard let row = row as? SettingsViewModel.NavigationRow else {
+                 Log.shared.errorAndCrash(message: "Row doesn't match the expected type")
+                 return UITableViewCell()
+@@ -268,6 +269,15 @@ extension SettingsTableViewController : SwipeTableViewCellDelegate {
+             showExportDBsAlert()
+             tableView.deselectRow(at: indexPath, animated: true)
+             return
++        case .notificationTest:
++            UserNotificationTool.runSelfTest { [weak self] message in
++                DispatchQueue.main.async {
++                    UIUtils.showAlertWithOnlyPositiveButton(title: "Notification Diagnostics",
++                                                            message: message)
++                    self?.tableView.deselectRow(at: indexPath, animated: true)
++                }
++            }
++            return
+         case .account,
+              .extraKeys,
+              .resetTrust,
+@@ -398,7 +408,7 @@ extension SettingsTableViewController {
+             return .segueExtraKeys
+         case .tutorial:
+             return .tutorial
+-        case .passiveMode, .usePEPFolder, .pEpSync, .unsecureReplyWarningEnabled, .protectMessageSubject, .resetAccounts, .exportDBs, .keyserverSupport:
++        case .passiveMode, .usePEPFolder, .pEpSync, .unsecureReplyWarningEnabled, .protectMessageSubject, .resetAccounts, .exportDBs, .keyserverSupport, .notificationTest:
+             return .none
+         }
+     }
+diff --git a/pEpForiOS/UI/Settings/SettingsViewModel.swift b/pEpForiOS/UI/Settings/SettingsViewModel.swift
+index 0d75b86034ec5ae18388fb513497cf0ad2b45ed6..d29c1450f913b54ca1c2e7885a84b82beb72e92a 100644
+--- a/pEpForiOS/UI/Settings/SettingsViewModel.swift
++++ b/pEpForiOS/UI/Settings/SettingsViewModel.swift
+@@ -82,7 +82,8 @@ final class SettingsViewModel {
+              .trustedServer,
+              .resetTrust, 
+              .tutorial,
+-             .exportDBs:
++             .exportDBs,
++             .notificationTest:
+             return "SettingsCell"
+         case .resetAccounts:
+             return "SettingsActionCell"
+@@ -312,6 +313,7 @@ extension SettingsViewModel {
+         case .tutorial:
+             rows.append(generateNavigationRow(type: .tutorial, isDangerous: false))
+         case .support:
++            rows.append(generateNavigationRow(type: .notificationTest, isDangerous: false))
+             rows.append(generateNavigationRow(type: .exportDBs, isDangerous: false))
+         }
+         return rows
+@@ -456,6 +458,8 @@ extension SettingsViewModel {
+             return NSLocalizedString("Export p≡p databases to file system", comment: "setting row title: Export DBs")
+         case .keyserverSupport:
+             return NSLocalizedString("Support keys.openpgp.org", comment: "setting row title for keyserver support")
++        case .notificationTest:
++            return NSLocalizedString("Test Notifications", comment: "setting row title for notification diagnostics")
+         }
+     }
+ 
+@@ -480,7 +484,8 @@ extension SettingsViewModel {
+              .unsecureReplyWarningEnabled,
+              .tutorial,
+              .exportDBs,
+-             .keyserverSupport:
++             .keyserverSupport,
++             .notificationTest:
+             return nil
+         }
+     }
+@@ -600,6 +605,7 @@ extension SettingsViewModel {
+         case tutorial
+         case exportDBs
+         case keyserverSupport
++        case notificationTest
+     }
+ 
+     /// Struct that represents a section in SettingsTableViewController
+diff --git a/pEpForiOS/Util/Constants.swift b/pEpForiOS/Util/Constants.swift
+index 65026eb2ef5b7cf72d1d82ffb4944c244d8e8425..1f1ad65f1e9a5e605088a80c329f4f24a68d9bd6 100644
+--- a/pEpForiOS/Util/Constants.swift
++++ b/pEpForiOS/Util/Constants.swift
+@@ -44,11 +44,3 @@ extension Constants {
+         static let loadingInterface = "LoadingInterface"
+     }
+ }
+-
+-// MARK: - BGAppRefreshTask
+-
+-extension Constants {
+-    static let appRefreshTaskBackgroundtaskBackgroundfetchSchedulerid =
+-        "security.pep.pep4ios.backgroundtaskschedulerid.backgroundfetch"
+-}
+-
+diff --git a/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift b/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift
+index c155f629e820771e82a3213005764e656738accb..349891bd008ef1c0a8ec8c5abefeae7b97673820 100644
+--- a/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift
++++ b/pEpForiOS/Util/Extensions/UserNotificationTool+pEp.swift
+@@ -11,6 +11,37 @@ import Foundation
+ /// pEp 4 iOS specific Extensions
+ extension UserNotificationTool {
+ 
++    static func postUserNotification(sender: String, subject: String, count: Int) {
++        guard count > 0 else {
++            return
++        }
++        let title = count == 1 ? sender : "\(sender) (+\(count - 1) more)"
++        let currentBadge = max(0, UIApplication.shared.applicationIconBadgeNumber)
++        post(title: title, body: subject, batch: currentBadge + count)
++    }
++
++    static func postUserNotification(forIncomingMails numMails: Int) {
++        guard numMails > 0 else {
++            return
++        }
++        let title: String
++        if numMails == 1 {
++            title = NSLocalizedString("New message received",
++                                      comment:
++                "Title for notification show on lock screen for *one* new mail")
++        } else {
++            title = String(format: NSLocalizedString("%1d new messages received",
++                                                     comment:
++                "Title for notification show on lock screen for new mails"),
++                           numMails)
++        }
++        let body = NSLocalizedString("Slide for more",
++                                     comment:
++            "Body for notifications show on lock screen for new mail(s)")
++        let currentBadge = max(0, UIApplication.shared.applicationIconBadgeNumber)
++        post(title: title, body: body, batch: currentBadge + numMails)
++    }
++
+     static func postUserNotification(forNumNewMails numMails: Int) {
+         if numMails ==  UIApplication.shared.applicationIconBadgeNumber {
+             // The number of new mails did not increase since informing the user last time.
+diff --git a/pEpForiOS/Util/UserNotificationTool.swift b/pEpForiOS/Util/UserNotificationTool.swift
+index cc0bc8f304874430c2b950eac40ae8c1e9cc8607..a10d9d24de54d1e714f10cc4889fa5398d7b9221 100644
+--- a/pEpForiOS/Util/UserNotificationTool.swift
++++ b/pEpForiOS/Util/UserNotificationTool.swift
+@@ -6,6 +6,7 @@
+ //  Copyright © 2017 p≡p Security S.A. All rights reserved.
+ //
+ 
++import Foundation
+ import UserNotifications
+ import pEpIOSToolbox
+ 
+@@ -14,36 +15,155 @@ struct UserNotificationTool {
+     static public func askForPermissions() {
+         let options: UNAuthorizationOptions = [.alert, .badge, .sound];
+         let center = UNUserNotificationCenter.current()
+-        center.requestAuthorization(options: options) { (granted, error) in }
++        center.requestAuthorization(options: options) { (granted, error) in
++            if let error = error {
++                Log.shared.warn("Notifications: authorization request failed: %@", error.localizedDescription)
++                return
++            }
++            Log.shared.warn("Notifications: authorization request completed; granted=%@",
++                            granted ? "yes" : "no")
++            logCurrentSettings()
++            if granted {
++                Log.shared.warn(
++                    "Notifications: automatic self-test suppressed; use Settings > Test Notifications")
++            }
++        }
++    }
++
++    /// Posts a visible notification and returns a human-readable snapshot of every setting
++    /// involved. This is intentionally exposed in Settings so notification failures can be
++    /// diagnosed without attaching a debugger to a device.
++    static public func runSelfTest(completion: @escaping (String) -> Void) {
++        let center = UNUserNotificationCenter.current()
++        center.getNotificationSettings { settings in
++            DispatchQueue.main.async {
++                let summary = settingsSummary(settings)
++                guard authorizationAllowsNotifications(settings.authorizationStatus) else {
++                    completion(summary + "\n\nNo test was posted. Enable Notifications for p≡p in iOS Settings.")
++                    return
++                }
++
++                post(title: "p≡p notification test",
++                     body: "Notifications are working on this device.",
++                     identifier: "PEPNotificationSelfTest.\(UUID().uuidString)") { error in
++                    if let error = error {
++                        completion(summary + "\n\nTest failed: " + error.localizedDescription)
++                    } else {
++                        completion(summary + "\n\nTest posted successfully. A banner should appear now.")
++                    }
++                }
++            }
++        }
+     }
+ 
+     static public func post(title: String, body: String? = nil, batch: Int? = nil) {
+-        // For some reason the notification is not triggered with timeInterval == nil
+-        let now = 0.01
++        let identifier = "PEPLocalNotification.\(UUID().uuidString)"
++        post(title: title, body: body, batch: batch, identifier: identifier) { _ in }
++    }
++
++    private static func post(title: String,
++                             body: String? = nil,
++                             batch: Int? = nil,
++                             identifier: String,
++                             completion: @escaping (Error?) -> Void) {
+         let center = UNUserNotificationCenter.current()
+         let content = UNMutableNotificationContent()
+         content.title = title
+         if let body = body {
+             content.body = body
+         }
+-        if let batch = batch as NSNumber? {
+-            content.badge = batch
+-        }
++        // Badge behavior is intentionally outside the current delivery
++        // baseline and will be restored and tested separately.
+         content.sound = UNNotificationSound.default
+-        let identifier = "PEPLocalNotification"
+-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: now, repeats: false)
++        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1.0, repeats: false)
+         let request = UNNotificationRequest(identifier: identifier,
+-                                            content: content, trigger: trigger)
++                                            content: content,
++                                            trigger: trigger)
+         center.add(request) { (error) in
+             if let error = error {
+                 Log.shared.warn(
+                     "Error posting user notification: %@",
+                     "\(error)")
++            } else {
++                Log.shared.warn("Notifications: request submitted id=%@", identifier)
++            }
++            completion(error)
++        }
++    }
++
++    private static func logCurrentSettings() {
++        UNUserNotificationCenter.current().getNotificationSettings { settings in
++            DispatchQueue.main.async {
++                Log.shared.warn("Notifications: %@", settingsSummary(settings))
+             }
+         }
+     }
+ 
++    private static func settingsSummary(_ settings: UNNotificationSettings) -> String {
++        return "Authorization: \(authorizationDescription(settings.authorizationStatus)); " +
++            "alerts: \(settingDescription(settings.alertSetting)); " +
++            "sounds: \(settingDescription(settings.soundSetting)); " +
++            "badges: \(settingDescription(settings.badgeSetting)); " +
++            "Background App Refresh: \(backgroundRefreshDescription())"
++    }
++
++    private static func authorizationAllowsNotifications(_ status: UNAuthorizationStatus) -> Bool {
++        switch status {
++        case .authorized, .provisional, .ephemeral:
++            return true
++        case .notDetermined, .denied:
++            return false
++        @unknown default:
++            return false
++        }
++    }
++
++    private static func authorizationDescription(_ status: UNAuthorizationStatus) -> String {
++        switch status {
++        case .notDetermined:
++            return "not requested"
++        case .denied:
++            return "denied"
++        case .authorized:
++            return "authorized"
++        case .provisional:
++            return "provisional"
++        case .ephemeral:
++            return "ephemeral"
++        @unknown default:
++            return "unknown"
++        }
++    }
++
++    private static func settingDescription(_ setting: UNNotificationSetting) -> String {
++        switch setting {
++        case .notSupported:
++            return "not supported"
++        case .disabled:
++            return "disabled"
++        case .enabled:
++            return "enabled"
++        @unknown default:
++            return "unknown"
++        }
++    }
++
++    private static func backgroundRefreshDescription() -> String {
++        switch UIApplication.shared.backgroundRefreshStatus {
++        case .available:
++            return "available"
++        case .denied:
++            return "denied"
++        case .restricted:
++            return "restricted"
++        @unknown default:
++            return "unknown"
++        }
++    }
++
+     static public func resetApplicationIconBadgeNumber() {
+-        UIApplication.shared.applicationIconBadgeNumber = 0
++        // Preserve the current badge until badge semantics are tested as a
++        // separate behavior change.
++        Log.shared.warn("Notifications: badge reset suppressed by current baseline")
+     }
+ }
+diff --git a/pEpForiOS/pEpForiOS-Bridging-Header.h b/pEpForiOS/pEpForiOS-Bridging-Header.h
+index 74005dbf55a06cc557aff36b801e3b6e9702fca6..d7b222027d7f8b498c193f53750e88e4ff51b48b 100644
+--- a/pEpForiOS/pEpForiOS-Bridging-Header.h
++++ b/pEpForiOS/pEpForiOS-Bridging-Header.h
+@@ -17,6 +17,10 @@
+ 
+ #import <AppAuth/AppAuth.h>
+ 
++#pragma mark - Jailbreak Background Notification Delivery
++
++#import "PEPNotificationLauncher.h"
++
+ #pragma mark - HTML/Markdown
+ 
+ #import "HTMLParser/Axt/Axt.h"

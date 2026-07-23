@@ -1,0 +1,2 @@
+# Unified-diff context markers are significant and can resemble whitespace errors.
+*.patch -whitespace
