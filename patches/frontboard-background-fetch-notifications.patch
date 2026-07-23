@@ -1,0 +1,296 @@
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -33,7 +33,6 @@ private struct PEPQueuedNotification: Codable {
+ }
+ 
+ private enum PEPNotificationDeliveryQueue {
+-    static let wakeRequestIdentifier = "pep-notification-delivery-wakeup"
+     private static let appGroupIdentifier = "group.software.pEp"
+     private static let directoryName = "notification-delivery-queue"
+ 
+@@ -174,8 +173,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
+     private var isSystemNotificationDeliveryLaunch = false
+     private var notificationDeliveryStarted = false
+     private var notificationDeliveryCompleted = false
+-    private var notificationResponseCompletion: (() -> Void)?
+-    private var notificationExitScheduled = false
++    private var notificationFetchCompletion:
++        ((UIBackgroundFetchResult) -> Void)?
+ 
+     /// The model
+     private var messageModelService: MessageModelServiceProtocol?
+@@ -244,24 +243,20 @@ extension AppDelegate {
+         }
+         if PEPNotificationDeliveryQueue.hasPendingNotifications {
+             UNUserNotificationCenter.current().delegate = self
+-            if application.applicationState == .background {
+-                beginSystemNotificationDelivery()
+-            } else {
+-                let workItem = DispatchWorkItem { [weak self] in
+-                    guard let self = self,
+-                          !self.isSystemNotificationDeliveryLaunch else {
+-                        return
+-                    }
+-                    _ = self.completeNormalLaunch(
+-                        application,
+-                        launchOptions: launchOptions)
+-                    PEPNotificationDeliveryQueue.deliverAll {}
++            let workItem = DispatchWorkItem { [weak self] in
++                guard let self = self,
++                      !self.isSystemNotificationDeliveryLaunch else {
++                    return
+                 }
+-                deferredNormalLaunch = workItem
+-                DispatchQueue.main.asyncAfter(
+-                    deadline: .now() + 2.0,
+-                    execute: workItem)
++                _ = self.completeNormalLaunch(
++                    application,
++                    launchOptions: launchOptions)
++                PEPNotificationDeliveryQueue.deliverAll {}
+             }
++            deferredNormalLaunch = workItem
++            DispatchQueue.main.asyncAfter(
++                deadline: .now() + 2.0,
++                execute: workItem)
+             return true
+         }
+         return completeNormalLaunch(application, launchOptions: launchOptions)
+@@ -385,28 +380,13 @@ extension AppDelegate {
+ 
+     private func finishSystemNotificationDeliveryIfPossible() {
+         guard notificationDeliveryCompleted,
+-              !notificationExitScheduled else {
+-            return
+-        }
+-        if let completion = notificationResponseCompletion {
+-            completion()
+-            notificationResponseCompletion = nil
+-            scheduleNotificationDeliveryExit(after: 0.25)
+-        } else {
+-            scheduleNotificationDeliveryExit(after: 2.0)
+-        }
+-    }
+-
+-    private func scheduleNotificationDeliveryExit(after delay: TimeInterval) {
+-        guard !notificationExitScheduled else {
++              let completion = notificationFetchCompletion else {
+             return
+         }
+-        notificationExitScheduled = true
+-        // Returning from the notification response callback lets RunningBoard
+-        // suspend this background app before a delayed exit can execute. The
+-        // request has already fired by this point, so terminate synchronously.
+-        _ = delay
+-        exit(0)
++        notificationFetchCompletion = nil
++        notificationDeliveryStarted = false
++        notificationDeliveryCompleted = false
++        completion(.newData)
+     }
+ 
+     /// Called when the application is about to terminate. Save data if appropriate. See also
+@@ -420,6 +400,16 @@ extension AppDelegate {
+ 
+     func application(_ application: UIApplication, performFetchWithCompletionHandler
+                         completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
++        if PEPNotificationDeliveryQueue.hasPendingNotifications &&
++            !normalLaunchStarted {
++            Log.shared.warn(
++                "BackgroundFetch: delivering queued native notifications")
++            notificationFetchCompletion = completionHandler
++            beginSystemNotificationDelivery()
++            finishSystemNotificationDeliveryIfPossible()
++            return
++        }
++
+         Log.shared.warn("BackgroundFetch: started by iOS")
+         guard let messageModelService = messageModelService else {
+             Log.shared.error("BackgroundFetch: no message model service")
+@@ -858,6 +848,17 @@ private final class PEPHeadlessNotifier {
+                 }
+             }
+         }
++        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
++            [weak self] in
++            guard let self = self,
++                  self.notificationLaunchInFlight,
++                  PEPNotificationDeliveryQueue.hasPendingNotifications else {
++                return
++            }
++            self.notificationLaunchInFlight = false
++            self.log("native background fetch action timed out; retrying")
++            self.launchNotificationDeliveryIfNeeded()
++        }
+     }
+ 
+     private func cleaned(_ value: String?,
+@@ -878,29 +879,6 @@ private final class PEPHeadlessNotifier {
+ // MARK: - Foreground Notifications
+ 
+ extension AppDelegate: UNUserNotificationCenterDelegate {
+-    func userNotificationCenter(
+-        _ center: UNUserNotificationCenter,
+-        didReceive response: UNNotificationResponse,
+-        withCompletionHandler completionHandler: @escaping () -> Void) {
+-        guard response.notification.request.identifier ==
+-                PEPNotificationDeliveryQueue.wakeRequestIdentifier,
+-              PEPNotificationDeliveryQueue.hasPendingNotifications else {
+-            completionHandler()
+-            return
+-        }
+-
+-        if normalLaunchStarted {
+-            PEPNotificationDeliveryQueue.deliverAll {
+-                completionHandler()
+-            }
+-            return
+-        }
+-
+-        notificationResponseCompletion = completionHandler
+-        beginSystemNotificationDelivery()
+-        finishSystemNotificationDeliveryIfPossible()
+-    }
+-
+     func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                 willPresent notification: UNNotification,
+                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+diff --git a/pEpForiOS/PEPNotificationLauncher.h b/pEpForiOS/PEPNotificationLauncher.h
+--- a/pEpForiOS/PEPNotificationLauncher.h
++++ b/pEpForiOS/PEPNotificationLauncher.h
+@@ -2,76 +2,83 @@
+ #define PEPNotificationLauncher_h
+ 
+ #import <Foundation/Foundation.h>
+-#import <UserNotifications/UserNotifications.h>
+ #import <dlfcn.h>
+ #import <objc/message.h>
+ 
+-typedef id (*PEPObjectInitializer)(id, SEL, id);
+-typedef id (*PEPTwoObjectFactory)(id, SEL, id, id);
+-typedef void (*PEPBackgroundLaunchMessage)(id, SEL, id, id, id);
++typedef id (*PEPNoArgumentObjectMessage)(id, SEL);
++typedef id (*PEPOneObjectFactory)(id, SEL, id);
++typedef void (*PEPOpenApplicationMessage)(id, SEL, id, id, id);
+ 
+-NS_INLINE id PEPNotificationLauncherInstance(Class launcherClass) {
+-    static id launcher;
+-    static dispatch_once_t onceToken;
+-    dispatch_once(&onceToken, ^{
+-        launcher = ((PEPObjectInitializer)objc_msgSend)(
+-            [launcherClass alloc],
+-            NSSelectorFromString(@"initWithLocationMonitor:"),
+-            nil);
+-    });
+-    return launcher;
++NS_INLINE NSString *PEPFrontBoardStringSymbol(
++    void *handle,
++    const char *name) {
++    void *symbol = dlsym(handle, name);
++    return symbol == NULL ? nil : *(__unsafe_unretained NSString **)symbol;
++}
++
++NS_INLINE void PEPKeepBackgroundFetchActionAlive(id action) {
++    static id activeAction;
++    activeAction = action;
+ }
+ 
+ NS_INLINE void PEPLaunchNotificationDelivery(
+     void (^completion)(BOOL launched)) {
+-    void *handle = dlopen(
++    void *frontBoard = dlopen(
+         "/System/Library/PrivateFrameworks/"
+-        "UserNotificationsServer.framework/UserNotificationsServer",
++        "FrontBoardServices.framework/FrontBoardServices",
++        RTLD_LAZY);
++    void *uiKit = dlopen(
++        "/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore",
+         RTLD_LAZY);
+-    Class launcherClass = NSClassFromString(@"UNSApplicationLauncher");
+-    if (handle == NULL || launcherClass == Nil) {
++    Class actionClass =
++        NSClassFromString(@"UIFetchContentInBackgroundAction");
++    Class optionsClass = NSClassFromString(@"FBSOpenApplicationOptions");
++    Class serviceClass = NSClassFromString(@"FBSOpenApplicationService");
++    NSString *actionsKey = PEPFrontBoardStringSymbol(
++        frontBoard,
++        "FBSOpenApplicationOptionKeyActions");
++    NSString *activateSuspendedKey = PEPFrontBoardStringSymbol(
++        frontBoard,
++        "FBSOpenApplicationOptionKeyActivateSuspended");
++    if (frontBoard == NULL || uiKit == NULL || actionClass == Nil ||
++        optionsClass == Nil || serviceClass == Nil || actionsKey == nil ||
++        activateSuspendedKey == nil) {
+         completion(NO);
+         return;
+     }
+ 
+-    UNMutableNotificationContent *content =
+-        [[UNMutableNotificationContent alloc] init];
+-    content.title = @"pEp mail delivery";
+-    UNNotificationRequest *request =
+-        [UNNotificationRequest
+-            requestWithIdentifier:@"pep-notification-delivery-wakeup"
+-            content:content
+-            trigger:nil];
+-    UNNotification *notification =
+-        ((PEPTwoObjectFactory)objc_msgSend)(
+-            [UNNotification class],
+-            NSSelectorFromString(@"notificationWithRequest:date:"),
+-            request,
+-            [NSDate date]);
+-    UNNotificationResponse *response =
+-        ((PEPTwoObjectFactory)objc_msgSend)(
+-            [UNNotificationResponse class],
+-            NSSelectorFromString(
+-                @"responseWithNotification:actionIdentifier:"),
+-            notification,
+-            UNNotificationDefaultActionIdentifier);
+-    id launcher = PEPNotificationLauncherInstance(launcherClass);
+-    if (launcher == nil || notification == nil || response == nil) {
++    void (^actionHandler)(void) = ^{
++        PEPKeepBackgroundFetchActionAlive(nil);
++        completion(YES);
++    };
++    id action = ((PEPOneObjectFactory)objc_msgSend)(
++        [actionClass alloc],
++        NSSelectorFromString(@"initWithHandler:"),
++        actionHandler);
++    NSDictionary *dictionary = @{
++        actionsKey: @[action],
++        activateSuspendedKey: @YES
++    };
++    id options = ((PEPOneObjectFactory)objc_msgSend)(
++        optionsClass,
++        NSSelectorFromString(@"optionsWithDictionary:"),
++        dictionary);
++    id service = ((PEPNoArgumentObjectMessage)objc_msgSend)(
++        serviceClass,
++        NSSelectorFromString(@"serviceWithDefaultShellEndpoint"));
++    if (action == nil || options == nil || service == nil) {
+         completion(NO);
+         return;
+     }
++    PEPKeepBackgroundFetchActionAlive(action);
+ 
+-    void (^systemCompletion)(BOOL) = ^(BOOL launched) {
+-        completion(launched);
++    void (^openCompletion)(void) = ^{};
+-    };
+-    ((PEPBackgroundLaunchMessage)objc_msgSend)(
+-        launcher,
+-        NSSelectorFromString(
+-            @"backgroundLaunchApplication:withResponse:"
+-             "completionHandler:"),
++    ((PEPOpenApplicationMessage)objc_msgSend)(
++        service,
++        NSSelectorFromString(@"openApplication:withOptions:completion:"),
+         @"software.pEp.mail",
+-        response,
+-        systemCompletion);
++        options,
++        openCompletion);
+ }
+ 
+ #endif /* PEPNotificationLauncher_h */

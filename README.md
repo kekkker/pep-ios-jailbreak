@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.9_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.10_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -33,13 +33,13 @@ terminating the GUI releases ownership back to launchd. New messages are parsed,
 stored, decrypted, and synchronized by pEp's normal model stack.
 
 The headless process does not call `UNUserNotificationCenter` directly. It
-atomically queues sender and subject in pEp's app-group container, then asks
-iOS's notification-action launcher to start `software.pEp.mail` through its
-normal UIKit and RunningBoard lifecycle. That short-lived system-managed app
-launch submits the notification, acknowledges the background response, and
-exits without initializing the mail model or UI. This preserves pEp's own
-notification identity while avoiding the malformed SpringBoard history entries
-created when a raw launchd process submits app notifications.
+atomically queues sender and subject in pEp's app-group container, then sends a
+real UIKit background-fetch action through FrontBoard to
+`software.pEp.mail`. The system-managed background launch submits the local
+notification and answers the fetch action without initializing the mail model
+or UI. This preserves pEp's own notification identity without fabricating a
+notification tap response, which can corrupt SpringBoard's notification-list
+reconciliation on lock and unlock.
 
 Upstream pEp has its broken IMAP IDLE path disabled and currently polls using
 its own replication service, normally every ten seconds.
@@ -88,13 +88,20 @@ Version 1.1.7 removes the unnecessary post-submission grace period. Once
 `UNUserNotificationCenter` accepts a local request, iOS owns its timer and the
 delivery process can acknowledge the launch and exit immediately.
 
-Version 1.1.8 retains the system notification launcher for the lifetime of the
-headless engine. Its internal cleanup queue can outlive a launch completion, so
-releasing a per-message launcher risks a dangling Objective-C callback.
+Version 1.1.8 retains the old system notification launcher for the lifetime of
+the headless engine. Its internal cleanup queue could outlive a launch
+completion, so releasing a per-message launcher risked a dangling Objective-C
+callback.
 
-The filtered-message detail patch keeps the messages currently shown by a
-filter in the detail carousel. Opening an unread message can therefore mark it
-read without immediately replacing its content with the next unread message.
+Version 1.1.9 keeps the messages currently shown by a filter in the detail
+carousel. Opening an unread message can therefore mark it read without
+immediately replacing its content with the next unread message.
+
+Version 1.1.10 replaces the fabricated notification-response launch with the
+real `UIFetchContentInBackgroundAction` payload used by UIKit on iOS 16.3.
+The pEp app handles that request through
+`application(_:performFetchWithCompletionHandler:)`; no fake notification or
+notification-center action is created.
 
 ## License
 
