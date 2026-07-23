@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.11_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.12_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -110,6 +110,11 @@ discarded the entire visible notification list whenever it encountered a local
 notification owned by the platform-signed GUI, even though usernotificationsd
 kept the delivered request intact. A one-time pEp-only migration removes those
 stale platform-owner requests before the first non-platform delivery.
+
+Version 1.1.12 submits queued mail notifications as immediate local requests
+with a `nil` trigger. This removes the one-second timer's `RequestDate` and
+`TimeInterval` trigger metadata while retaining the real UIKit background-fetch
+launch, non-platform app identity, notification content, and destinations.
 
 ## License
 

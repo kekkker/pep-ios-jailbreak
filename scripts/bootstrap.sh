@@ -66,6 +66,9 @@ git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/non-platform-notification-owner-migration.patch"
 
 git -C "$work_root/pEpForiOS" apply \
+    "$repo_root/patches/immediate-notification-delivery.patch"
+
+git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/stable-filtered-message-detail.patch"
 
 mkdir -p "$work_root/pEpForiOS-intern/pEp4iosIntern"

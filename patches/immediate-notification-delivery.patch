@@ -1,0 +1,19 @@
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -101,12 +101,12 @@ private enum PEPNotificationDeliveryQueue {
+             content.body = payload.body
+             content.sound = .default
+             content.interruptionLevel = .active
++            // Deliver immediately without archiving timer/request-date state.
++            // SpringBoard owns reconciliation after usernotificationsd accepts it.
+             let request = UNNotificationRequest(
+                 identifier: payload.identifier,
+                 content: content,
+-                trigger: UNTimeIntervalNotificationTrigger(
+-                    timeInterval: 1.0,
+-                    repeats: false))
++                trigger: nil)
+ 
+             group.enter()
+             center.add(request) { error in
