@@ -22,14 +22,16 @@ index 34cd5794e..45f3f2376 100644
 +        // lets launchd transfer mail ownership to the headless mode.
 +        exit(0)
      }
-@@ -632,9 +642,7 @@ private final class PEPHeadlessNotifier {
+@@ -632,9 +642,9 @@ private final class PEPHeadlessNotifier {
          let request = UNNotificationRequest(
              identifier: "pep-mail-\(UUID().uuidString)",
              content: content,
 -            trigger: UNTimeIntervalNotificationTrigger(
 -                timeInterval: 0.1,
 -                repeats: false))
-+            trigger: nil)
++            trigger: UNTimeIntervalNotificationTrigger(
++                timeInterval: 1.0,
++                repeats: false))
          notificationCenter.add(request) { [weak self] error in
              if let error = error {
                  self?.log("native notification failed: \(error.localizedDescription)")
@@ -49,7 +51,7 @@ diff --git a/pEpForiOS/Util/UserNotificationTool.swift b/pEpForiOS/Util/UserNoti
 index 6ca5c593b..b0b671cbb 100644
 --- a/pEpForiOS/Util/UserNotificationTool.swift
 +++ b/pEpForiOS/Util/UserNotificationTool.swift
-@@ -68,21 +68,19 @@ struct UserNotificationTool {
+@@ -68,21 +68,20 @@ struct UserNotificationTool {
                               batch: Int? = nil,
                               identifier: String,
                               completion: @escaping (Error?) -> Void) {
@@ -69,10 +71,11 @@ index 6ca5c593b..b0b671cbb 100644
 +        // affected iOS releases.
          content.sound = UNNotificationSound.default
 -        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: now, repeats: false)
++        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1.0, repeats: false)
          let request = UNNotificationRequest(identifier: identifier,
 -                                            content: content, trigger: trigger)
 +                                            content: content,
-+                                            trigger: nil)
++                                            trigger: trigger)
          center.add(request) { (error) in
              if let error = error {
                  Log.shared.warn(
