@@ -2,4 +2,6 @@ work/
 DerivedData/
 artifacts/
 *.log
+__pycache__/
+*.pyc
 .DS_Store
