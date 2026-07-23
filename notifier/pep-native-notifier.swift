@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 import MessageModel
-import UserNotifications
 
 @_silgen_name("notify_register_check")
 private func systemNotifyRegisterCheck(
@@ -13,12 +12,13 @@ private func systemNotifyCheck(
     _ token: Int32,
     _ changed: UnsafeMutablePointer<Int32>) -> UInt32
 
-@_silgen_name("PEPCreateNotificationCenter")
-private func createPEPNotificationCenter() -> UnsafeMutableRawPointer?
+@_silgen_name("notify_post")
+private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
 
 private let appGroupIdentifier = "group.software.pEp"
 private let newMessageNotification = Notification.Name("pEpNewInboxMessagePersisted")
 private let takeoverNotification = "software.pep.native-notifier.takeover"
+private let newBulletinNotification = "software.pep.notifier.new-bulletin"
 
 private func log(_ message: String) {
     FileHandle.standardError.write(Data(("pep-native-notifier: \(message)\n").utf8))
@@ -94,23 +94,14 @@ private final class HeadlessProviders:
 private final class NativeNotifier {
     private let providers = HeadlessProviders()
     private let fileManager = FileManager.default
-    private let notificationCenter: UNUserNotificationCenter
+    private let queue = DispatchQueue(label: "software.pep.native-notifier.bulletins")
+    private var bulletinQueueURL: URL?
     private var lockFileDescriptor: Int32 = -1
     private var takeoverToken: Int32 = 0
     private var takeoverTimer: Timer?
     private var newMailObserver: NSObjectProtocol?
     private var service: MessageModelService?
     private var isStopping = false
-
-    init() {
-        guard let opaqueCenter = createPEPNotificationCenter() else {
-            log("explicit pEp notification center is unavailable")
-            exit(75)
-        }
-        notificationCenter = Unmanaged<UNUserNotificationCenter>
-            .fromOpaque(opaqueCenter)
-            .takeRetainedValue()
-    }
 
     func run() -> Never {
         setenv("PEP_HEADLESS_NOTIFIER", "1", 1)
@@ -136,9 +127,6 @@ private final class NativeNotifier {
         service = modelService
         modelService.start()
         startTakeoverTimer()
-        notificationCenter.getNotificationSettings { settings in
-            log("pEp notification authorization status \(settings.authorizationStatus.rawValue)")
-        }
         log("pEp MessageModel started")
 
         RunLoop.main.run()
@@ -162,6 +150,21 @@ private final class NativeNotifier {
             forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             log("app-group container unavailable")
             exit(71)
+        }
+
+        let queueURL = container
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Caches", isDirectory: true)
+            .appendingPathComponent("software.pep.notifier", isDirectory: true)
+            .appendingPathComponent("queue", isDirectory: true)
+        do {
+            try fileManager.createDirectory(
+                at: queueURL,
+                withIntermediateDirectories: true)
+            bulletinQueueURL = queueURL
+        } catch {
+            log("unable to create notification queue: \(error.localizedDescription)")
+            exit(74)
         }
 
         let lockURL = container.appendingPathComponent("pep-mail-engine.lock")
@@ -223,21 +226,32 @@ private final class NativeNotifier {
     private func queueBulletin(sender: String?, subject: String?) {
         let title = cleaned(sender, fallback: "New email", limit: 180)
         let message = cleaned(subject, fallback: "(No subject)", limit: 500)
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = message
-        content.sound = .default
-        content.interruptionLevel = .active
-        let request = UNNotificationRequest(
-            identifier: "pep-mail-\(UUID().uuidString)",
-            content: content,
-            trigger: nil)
-
-        notificationCenter.add(request) { error in
-            if let error {
-                log("pEp native notification failed: \(error.localizedDescription)")
-            } else {
-                log("pEp native notification stored by usernotificationsd")
+        queue.async { [weak self] in
+            do {
+                guard let self, let queueURL = self.bulletinQueueURL else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                let payload: [String: String] = [
+                    "title": title,
+                    "message": message
+                ]
+                let payloadData = try PropertyListSerialization.data(
+                    fromPropertyList: payload,
+                    format: .binary,
+                    options: 0)
+                let payloadURL = queueURL
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension("plist")
+                try payloadData.write(to: payloadURL, options: .atomic)
+                let status = newBulletinNotification.withCString {
+                    systemNotifyPost($0)
+                }
+                guard status == 0 else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                log("queued pEp notification payload")
+            } catch {
+                log("unable to queue notification: \(error.localizedDescription)")
             }
         }
     }
