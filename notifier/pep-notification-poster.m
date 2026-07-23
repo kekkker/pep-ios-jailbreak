@@ -5,9 +5,9 @@
 #import <objc/runtime.h>
 
 static NSString *const PEPQueueDirectory =
-    @"/var/mobile/Library/Caches/software.pep.notifier/queue";
+    @"/var/mobile/Library/Caches/software.pep.notifier/queue-v2";
 static CFStringRef const PEPQueueChangedNotification =
-    CFSTR("software.pep.notifier.new-bulletin");
+    CFSTR("software.pep.notification-poster.queue-changed.v2");
 
 static UNUserNotificationCenter *PEPNotificationCenter = nil;
 static NSMutableSet<NSString *> *PEPProcessingPaths = nil;

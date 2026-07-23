@@ -18,7 +18,8 @@ private func systemNotifyPost(_ name: UnsafePointer<CChar>) -> UInt32
 private let appGroupIdentifier = "group.software.pEp"
 private let newMessageNotification = Notification.Name("pEpNewInboxMessagePersisted")
 private let takeoverNotification = "software.pep.native-notifier.takeover"
-private let newBulletinNotification = "software.pep.notifier.new-bulletin"
+private let newBulletinNotification =
+    "software.pep.notification-poster.queue-changed.v2"
 
 private func log(_ message: String) {
     FileHandle.standardError.write(Data(("pep-native-notifier: \(message)\n").utf8))
@@ -156,7 +157,7 @@ private final class NativeNotifier {
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Caches", isDirectory: true)
             .appendingPathComponent("software.pep.notifier", isDirectory: true)
-            .appendingPathComponent("queue", isDirectory: true)
+            .appendingPathComponent("queue-v2", isDirectory: true)
         do {
             try fileManager.createDirectory(
                 at: queueURL,
