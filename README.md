@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.5_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.6_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -78,6 +78,11 @@ Version 1.1.5 replaces daemon-side notification submission with the
 system-managed delivery launch described above. Sender and subject remain in
 the notification, queued messages are retried, and the daemon still uses pEp's
 single built-in mail engine.
+
+Version 1.1.6 exits the short-lived delivery launch synchronously after
+acknowledging the notification response. This prevents RunningBoard from
+suspending it before cleanup and ensures later messages start a fresh delivery
+cycle.
 
 ## License
 
