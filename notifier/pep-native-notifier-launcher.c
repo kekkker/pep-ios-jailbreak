@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <glob.h>
 #include <signal.h>
+#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 #include <unistd.h>
 
 extern uint32_t notify_post(const char *name);
+extern char **environ;
 
 static const char *const app_binary_pattern =
     "/var/containers/Bundle/Application/*/pEp.app/pEpNativeNotifier";
@@ -128,30 +130,59 @@ static int supervise_notifier(const char *binary) {
         return 74;
     }
 
-    child_pid = fork();
-    if (child_pid < 0) {
-        fprintf(stderr, "pep-native-launcher: fork failed (errno %d)\n", errno);
+    posix_spawn_file_actions_t file_actions;
+    int spawn_result = posix_spawn_file_actions_init(&file_actions);
+    if (spawn_result != 0) {
+        fprintf(stderr, "pep-native-launcher: spawn setup failed (errno %d)\n",
+                spawn_result);
         close(bulletin_pipe[0]);
         close(bulletin_pipe[1]);
         return 75;
     }
-    if (child_pid == 0) {
+
+    spawn_result = posix_spawn_file_actions_addclose(
+        &file_actions,
+        bulletin_pipe[0]);
+    if (spawn_result == 0) {
+        spawn_result = posix_spawn_file_actions_adddup2(
+            &file_actions,
+            bulletin_pipe[1],
+            3);
+    }
+    if (spawn_result == 0 && bulletin_pipe[1] != 3) {
+        spawn_result = posix_spawn_file_actions_addclose(
+            &file_actions,
+            bulletin_pipe[1]);
+    }
+    if (spawn_result != 0) {
+        fprintf(stderr, "pep-native-launcher: spawn actions failed (errno %d)\n",
+                spawn_result);
+        posix_spawn_file_actions_destroy(&file_actions);
         close(bulletin_pipe[0]);
-        if (bulletin_pipe[1] != 3) {
-            if (dup2(bulletin_pipe[1], 3) < 0) {
-                _exit(76);
-            }
-            close(bulletin_pipe[1]);
-        }
-        fcntl(3, F_SETFD, 0);
-        setenv("PEP_HEADLESS_NOTIFIER", "1", 1);
-        setenv("PEP_BULLETIN_FD", "3", 1);
-        char *const arguments[] = {(char *)binary, NULL};
-        execv(binary, arguments);
-        _exit(77);
+        close(bulletin_pipe[1]);
+        return 76;
     }
 
+    setenv("PEP_HEADLESS_NOTIFIER", "1", 1);
+    setenv("PEP_BULLETIN_FD", "3", 1);
+    char *const arguments[] = {(char *)binary, NULL};
+    spawn_result = posix_spawn(
+        &child_pid,
+        binary,
+        &file_actions,
+        NULL,
+        arguments,
+        environ);
+    posix_spawn_file_actions_destroy(&file_actions);
     close(bulletin_pipe[1]);
+    if (spawn_result != 0) {
+        fprintf(stderr, "pep-native-launcher: spawn failed (errno %d)\n",
+                spawn_result);
+        close(bulletin_pipe[0]);
+        return 77;
+    }
+
+    fprintf(stderr, "pep-native-launcher: pEp child started\n");
     signal(SIGTERM, forward_signal);
     signal(SIGINT, forward_signal);
     signal(SIGHUP, forward_signal);

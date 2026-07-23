@@ -146,11 +146,11 @@ chmod 644 \
     "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.0.1_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.2_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 file "$app/pEpNativeNotifier"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.0.1_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.2_iphoneos-arm64.deb"

@@ -1,6 +1,6 @@
 Package: software.pep.notifier
 Name: pEp Native Background Engine
-Version: 1.0.1
+Version: 1.0.2
 Architecture: iphoneos-arm64
 Description: Headless host for the MessageModel and Pantomime frameworks shipped by pEp
 Maintainer: pEp iOS jailbreak wrapper contributors
