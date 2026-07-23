@@ -27,6 +27,7 @@ for metadata in /var/mobile/Containers/Shared/AppGroup/*/.com.apple.mobile_conta
     break
 done
 
+launchctl bootout user/501/software.pep.notifier >/dev/null 2>&1 || true
 launchctl bootout system/software.pep.notifier >/dev/null 2>&1 || true
 launchctl bootstrap system "$plist" >/dev/null 2>&1 || true
 launchctl kickstart -k system/software.pep.notifier >/dev/null 2>&1 || true

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/var/jb/bin/sh
 
 for binary in /var/containers/Bundle/Application/*/pEp.app/pEpNativeNotifier; do
     if [ -x "$binary" ]; then

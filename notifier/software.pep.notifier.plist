@@ -6,6 +6,7 @@
 	<string>software.pep.notifier</string>
 	<key>ProgramArguments</key>
 	<array>
+		<string>/var/jb/bin/sh</string>
 		<string>/var/jb/usr/libexec/pep-native-notifier-launcher</string>
 	</array>
 	<key>RunAtLoad</key>

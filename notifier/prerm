@@ -2,6 +2,7 @@
 set -e
 
 if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    launchctl bootout user/501/software.pep.notifier >/dev/null 2>&1 || true
     launchctl bootout system/software.pep.notifier >/dev/null 2>&1 || true
 fi
 
