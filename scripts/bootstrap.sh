@@ -56,6 +56,9 @@ git -C "$work_root/pEpForiOS" apply \
 git -C "$work_root/pEpForiOS" apply \
     "$repo_root/patches/system-managed-notification-no-grace-period.patch"
 
+git -C "$work_root/pEpForiOS" apply \
+    "$repo_root/patches/retain-system-notification-launcher.patch"
+
 mkdir -p "$work_root/pEpForiOS-intern/pEp4iosIntern"
 cp -R "$repo_root/shim/pEp4iosIntern/." "$work_root/pEpForiOS-intern/pEp4iosIntern/"
 cp "$repo_root/shim/secret.xcconfig" "$work_root/pEpForiOS-intern/secret.xcconfig"

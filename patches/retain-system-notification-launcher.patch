@@ -1,0 +1,40 @@
+diff --git a/pEpForiOS/PEPNotificationLauncher.h b/pEpForiOS/PEPNotificationLauncher.h
+--- a/pEpForiOS/PEPNotificationLauncher.h
++++ b/pEpForiOS/PEPNotificationLauncher.h
+@@ -10,6 +10,18 @@ typedef id (*PEPObjectInitializer)(id, SEL, id);
+ typedef id (*PEPTwoObjectFactory)(id, SEL, id, id);
+ typedef void (*PEPBackgroundLaunchMessage)(id, SEL, id, id, id);
+ 
++NS_INLINE id PEPNotificationLauncherInstance(Class launcherClass) {
++    static id launcher;
++    static dispatch_once_t onceToken;
++    dispatch_once(&onceToken, ^{
++        launcher = ((PEPObjectInitializer)objc_msgSend)(
++            [launcherClass alloc],
++            NSSelectorFromString(@"initWithLocationMonitor:"),
++            nil);
++    });
++    return launcher;
++}
++
+ NS_INLINE void PEPLaunchNotificationDelivery(
+     void (^completion)(BOOL launched)) {
+     void *handle = dlopen(
+@@ -43,16 +54,12 @@ NS_INLINE void PEPLaunchNotificationDelivery(
+             notification,
+             UNNotificationDefaultActionIdentifier);
+-    id launcher = ((PEPObjectInitializer)objc_msgSend)(
+-        [launcherClass alloc],
+-        NSSelectorFromString(@"initWithLocationMonitor:"),
+-        nil);
++    id launcher = PEPNotificationLauncherInstance(launcherClass);
+     if (launcher == nil || notification == nil || response == nil) {
+         completion(NO);
+         return;
+     }
+ 
+     void (^systemCompletion)(BOOL) = ^(BOOL launched) {
+-        (void)launcher;
+         completion(launched);
+     };
+     ((PEPBackgroundLaunchMessage)objc_msgSend)(
