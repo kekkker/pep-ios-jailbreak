@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.0_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.1_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -38,6 +38,27 @@ the app or inject into SpringBoard.
 
 Upstream pEp has its broken IMAP IDLE path disabled and currently polls using
 its own replication service, normally every ten seconds.
+
+## Notification persistence baseline
+
+The final `preserve-delivered-notifications.patch` overlay keeps notification
+testing free of app-initiated removal:
+
+- pEp's badge reset is a logged no-op. This covers both launch and
+  `applicationDidBecomeActive`, which can run while opening or closing
+  Notification Center.
+- The obsolete headless migration no longer removes pending or delivered
+  requests.
+- Automatic launch canaries are suppressed; use **Settings → Test
+  Notifications** for one controlled foreground request.
+- Foreground and headless requests use unique identifiers, and successful
+  submission/presentation logs include the identifier.
+
+Restart SpringBoard before interpreting a test from this build. Deleting the
+old injected bridge from disk does not unload it from the existing SpringBoard
+process. The 1.1.1 package deliberately leaves `software.pep.notifier`
+unloaded after installation for the foreground test. Enable it only after
+foreground persistence is confirmed.
 
 ## License
 

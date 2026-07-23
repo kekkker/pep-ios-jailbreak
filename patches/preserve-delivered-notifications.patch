@@ -1,0 +1,130 @@
+diff --git a/pEpForiOS/Util/UserNotificationTool.swift b/pEpForiOS/Util/UserNotificationTool.swift
+--- a/pEpForiOS/Util/UserNotificationTool.swift
++++ b/pEpForiOS/Util/UserNotificationTool.swift
+@@ -6,5 +6,6 @@
+ //
+ 
++import Foundation
+ import UserNotifications
+ import pEpIOSToolbox
+ 
+@@ -26,6 +27,7 @@ struct UserNotificationTool {
+             logCurrentSettings()
+             if granted {
+-                runAutomaticSelfTestOnce()
++                Log.shared.warn(
++                    "Notifications: automatic self-test suppressed; use Settings > Test Notifications")
+             }
+         }
+     }
+@@ -45,7 +46,7 @@ struct UserNotificationTool {
+ 
+                 post(title: "p≡p notification test",
+                      body: "Notifications are working on this device.",
+-                     identifier: "PEPNotificationSelfTest") { error in
++                     identifier: "PEPNotificationSelfTest.\(UUID().uuidString)") { error in
+                     if let error = error {
+                         completion(summary + "\n\nTest failed: " + error.localizedDescription)
+                     } else {
+@@ -56,7 +57,8 @@ struct UserNotificationTool {
+     }
+ 
+     static public func post(title: String, body: String? = nil, batch: Int? = nil) {
+-        post(title: title, body: body, batch: batch, identifier: "PEPLocalNotification") { _ in }
++        let identifier = "PEPLocalNotification.\(UUID().uuidString)"
++        post(title: title, body: body, batch: batch, identifier: identifier) { _ in }
+     }
+ 
+     private static func post(title: String,
+@@ -84,7 +86,9 @@ struct UserNotificationTool {
+                 Log.shared.warn(
+                     "Error posting user notification: %@",
+                     "\(error)")
+-            }
++            } else {
++                Log.shared.warn("Notifications: request submitted id=%@", identifier)
++            }
+             completion(error)
+         }
+     }
+@@ -179,6 +181,9 @@ struct UserNotificationTool {
+     }
+ 
+     static public func resetApplicationIconBadgeNumber() {
+-        UIApplication.shared.applicationIconBadgeNumber = 0
++        // Intentionally preserve the badge while debugging notification
++        // persistence. Assigning zero can also clear delivered notifications
++        // on affected iOS versions.
++        Log.shared.warn("Notifications: badge reset suppressed; preserving delivered notifications")
+     }
+ }
+diff --git a/pEpForiOS/AppDelegate.swift b/pEpForiOS/AppDelegate.swift
+--- a/pEpForiOS/AppDelegate.swift
++++ b/pEpForiOS/AppDelegate.swift
+@@ -367,7 +367,7 @@ extension AppDelegate {
+                 sender: me.pendingNewMailSender,
+                 subject: me.pendingNewMailSubject,
+                 count: count)
+-            Log.shared.warn("Notifications: delivered for %d newly persisted Inbox message(s)",
++            Log.shared.warn("Notifications: requested for %d newly persisted Inbox message(s)",
+                             count)
+         }
+         newMailNotificationWorkItem = workItem
+@@ -495,8 +495,6 @@ private final class PEPHeadlessNotifier {
+         Notification.Name("pEpNewInboxMessagePersisted")
+     private static let takeoverNotification =
+         "software.pep.native-notifier.takeover"
+-    private static let notificationMigrationKey =
+-        "nativeNotificationDelivery.sameExecutable.v1"
+ 
+     private let providers = PEPHeadlessProviders()
+     private let fileManager = FileManager.default
+@@ -512,7 +510,6 @@ private final class PEPHeadlessNotifier {
+         log("starting as \(Bundle.main.bundleIdentifier ?? "unknown bundle")")
+         registerForTakeover()
+         acquireMailEngineOwnership()
+-        migrateNotificationDeliveryIfNeeded()
+         logNotificationSettings()
+ 
+         providers.applyEngineSettings()
+@@ -615,22 +612,6 @@ private final class PEPHeadlessNotifier {
+         exit(0)
+     }
+ 
+-    private func migrateNotificationDeliveryIfNeeded() {
+-        let defaults =
+-            UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
+-        guard !defaults.bool(forKey: Self.notificationMigrationKey) else {
+-            return
+-        }
+-
+-        // Remove only pEp's old requests. Earlier jailbreak builds submitted
+-        // them from a second executable, which could leave SpringBoard's list
+-        // state detached from usernotificationsd's delivered-request state.
+-        notificationCenter.removeAllPendingNotificationRequests()
+-        notificationCenter.removeAllDeliveredNotifications()
+-        defaults.set(true, forKey: Self.notificationMigrationKey)
+-        log("cleared legacy pEp notification requests")
+-    }
+-
+     private func logNotificationSettings() {
+         notificationCenter.getNotificationSettings { [weak self] settings in
+             self?.log(
+@@ -657,8 +638,8 @@ private final class PEPHeadlessNotifier {
+         notificationCenter.add(request) { [weak self] error in
+             if let error = error {
+                 self?.log("native notification failed: \(error.localizedDescription)")
+             } else {
+-                self?.log("native notification submitted as software.pEp.mail")
++                self?.log("native notification submitted id=\(request.identifier) as software.pEp.mail")
+             }
+         }
+     }
+@@ -683,6 +664,7 @@ private final class PEPHeadlessNotifier {
+ extension AppDelegate: UNUserNotificationCenterDelegate {
+     func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                 willPresent notification: UNNotification,
+                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
++        Log.shared.warn("Notifications: willPresent id=%@", notification.request.identifier)
+         if #available(iOS 14.0, *) {
+             completionHandler([.banner, .list, .sound, .badge])
