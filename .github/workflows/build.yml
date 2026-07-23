@@ -140,7 +140,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: pep-native-background-engine
-          path: artifacts/software.pep.notifier_1.0.4_iphoneos-arm64.deb
+          path: artifacts/software.pep.notifier_1.0.5_iphoneos-arm64.deb
           if-no-files-found: error
 
       - name: Upload diagnostic log

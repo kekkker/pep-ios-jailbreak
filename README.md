@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.0.4_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.0.5_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -32,8 +32,9 @@ account passwords.
 pEp's GUI and headless host serialize ownership of the shared app-group store.
 Launching the GUI makes the daemon commit and exit before the app initializes;
 terminating the GUI releases ownership back to launchd. New messages are parsed,
-stored, decrypted, and synchronized by pEp's normal model stack, then the bridge
-shows sender and subject through Limneos `libbulletin`.
+stored, decrypted, and synchronized by pEp's normal model stack, then posted
+with unique IDs through iOS's native user-notification service. The SpringBoard
+bridge remains as a fallback if native delivery reports an error.
 
 The native package depends only on `net.limneos.libbulletin`. Upstream pEp has
 its broken IMAP IDLE path disabled and currently polls using its own replication
