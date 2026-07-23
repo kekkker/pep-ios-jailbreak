@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.10_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.11_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -102,6 +102,13 @@ real `UIFetchContentInBackgroundAction` payload used by UIKit on iOS 16.3.
 The pEp app handles that request through
 `application(_:performFetchWithCompletionHandler:)`; no fake notification or
 notification-center action is created.
+
+Version 1.1.11 removes `platform-application` and unlimited-background
+entitlements from the pEp GUI. The headless mode retains only the narrow
+FrontBoard launch entitlement. On iOS 16.3, SpringBoard's lock reconciliation
+discarded the entire visible notification list whenever it encountered a local
+notification owned by the platform-signed GUI, even though usernotificationsd
+kept the delivered request intact.
 
 ## License
 
