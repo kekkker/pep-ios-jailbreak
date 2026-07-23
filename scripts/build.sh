@@ -72,7 +72,6 @@ xcrun --sdk iphoneos swiftc \
     -Xcc -I"$work_root/pEpForiOS.XCFrameworks/pEpEngine/build-mac/include" \
     "$repo_root/notifier/pep-native-notifier.swift" \
     -framework MessageModel \
-    -framework UserNotifications \
     -Xlinker -rpath \
     -Xlinker @executable_path/Frameworks \
     -o "$app/pEpNativeNotifier"
@@ -141,11 +140,11 @@ chmod 644 \
     "$package/var/jb/Library/MobileSubstrate/DynamicLibraries/pep-notifier-bridge.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.0.5_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.6_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 file "$app/pEpNativeNotifier"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.0.5_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.0.6_iphoneos-arm64.deb"

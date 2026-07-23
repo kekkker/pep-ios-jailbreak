@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 import MessageModel
-import UserNotifications
 
 @_silgen_name("notify_register_check")
 private func systemNotifyRegisterCheck(
@@ -96,7 +95,6 @@ private final class NativeNotifier {
     private let providers = HeadlessProviders()
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "software.pep.native-notifier.bulletins")
-    private let notificationCenter = UNUserNotificationCenter.current()
     private var bulletinQueueURL: URL?
     private var lockFileDescriptor: Int32 = -1
     private var takeoverToken: Int32 = 0
@@ -129,9 +127,6 @@ private final class NativeNotifier {
         service = modelService
         modelService.start()
         startTakeoverTimer()
-        notificationCenter.getNotificationSettings { settings in
-            log("native notification authorization status \(settings.authorizationStatus.rawValue)")
-        }
         log("pEp MessageModel started")
 
         RunLoop.main.run()
@@ -231,27 +226,6 @@ private final class NativeNotifier {
     private func queueBulletin(sender: String?, subject: String?) {
         let title = cleaned(sender, fallback: "New email", limit: 180)
         let message = cleaned(subject, fallback: "(No subject)", limit: 500)
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = message
-        content.sound = .default
-        content.interruptionLevel = .active
-        let request = UNNotificationRequest(
-            identifier: "pep-mail-\(UUID().uuidString)",
-            content: content,
-            trigger: nil)
-
-        notificationCenter.add(request) { [weak self] error in
-            if let error {
-                log("native notification failed: \(error.localizedDescription); using bridge")
-                self?.queueBridgeBulletin(title: title, message: message)
-            } else {
-                log("posted persistent native iOS notification")
-            }
-        }
-    }
-
-    private func queueBridgeBulletin(title: String, message: String) {
         queue.async { [weak self] in
             do {
                 guard let self, let queueURL = self.bulletinQueueURL else {
@@ -276,7 +250,7 @@ private final class NativeNotifier {
                 guard status == 0 else {
                     throw CocoaError(.fileWriteUnknown)
                 }
-                log("queued bulletin from pEp MessageModel")
+                log("queued persistent bulletin from pEp MessageModel")
             } catch {
                 log("unable to queue bulletin: \(error.localizedDescription)")
             }
