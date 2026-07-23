@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.0.5_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.0.6_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
