@@ -17,7 +17,7 @@ stored here.
 
 Run the `Build TrollStore IPA` GitHub Actions workflow. Successful builds upload
 `pEp-iOS16-trollstore.ipa` and
-`software.pep.notifier_1.1.8_iphoneos-arm64.deb` as artifacts.
+`software.pep.notifier_1.1.9_iphoneos-arm64.deb` as artifacts.
 
 ## Native jailbreak background engine
 
@@ -91,6 +91,10 @@ delivery process can acknowledge the launch and exit immediately.
 Version 1.1.8 retains the system notification launcher for the lifetime of the
 headless engine. Its internal cleanup queue can outlive a launch completion, so
 releasing a per-message launcher risks a dangling Objective-C callback.
+
+The filtered-message detail patch keeps the messages currently shown by a
+filter in the detail carousel. Opening an unread message can therefore mark it
+read without immediately replacing its content with the next unread message.
 
 ## License
 

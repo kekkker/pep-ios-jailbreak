@@ -87,10 +87,10 @@ chmod 644 \
     "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.1.8_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.1.9_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.1.8_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.1.9_iphoneos-arm64.deb"

@@ -1,0 +1,90 @@
+diff --git a/SubProjects/MessageModel/MessageModel/MessageModel/Interface/QueryResults/MessageQueryResults/MessageQueryResultsFilter.swift b/SubProjects/MessageModel/MessageModel/MessageModel/Interface/QueryResults/MessageQueryResults/MessageQueryResultsFilter.swift
+index e21487b..d04316a 100644
+--- a/SubProjects/MessageModel/MessageModel/MessageModel/Interface/QueryResults/MessageQueryResults/MessageQueryResultsFilter.swift
++++ b/SubProjects/MessageModel/MessageModel/MessageModel/Interface/QueryResults/MessageQueryResults/MessageQueryResultsFilter.swift
+@@ -15,6 +15,9 @@ public struct MessageQueryResultsFilter {
+     public let mustBeFlagged: Bool?
+     public let mustBeUnread: Bool?
+     public let mustContainAttachments: Bool?
++    /// Messages that remain in this filtered result even when a mutable
++    /// attribute (for example the unread flag) stops matching.
++    public let includedMessageIDs: [MessageID]
+     //!!!: docs please. (do not forget to mention this MUST NOT be empty)
+ //    public let accounts: [Account]
+     /// Accounts, including their enabled state. Filter will only show messages in enabled accounts
+@@ -41,7 +44,17 @@ public struct MessageQueryResultsFilter {
+                 attributedPredicates.append(CdMessage.PredicateFactory.hasViewableAttachments())
+             }
+             if !attributedPredicates.isEmpty {
+-                finalPredicate.append(NSCompoundPredicate(orPredicateWithSubpredicates: attributedPredicates))
++                var filterOrIncludedPredicates: [NSPredicate] = [
++                    NSCompoundPredicate(orPredicateWithSubpredicates: attributedPredicates)
++                ]
++                if !includedMessageIDs.isEmpty {
++                    filterOrIncludedPredicates.append(
++                        NSPredicate(format: "%K IN %@",
++                                    CdMessage.AttributeName.uuid,
++                                    includedMessageIDs))
++                }
++                finalPredicate.append(NSCompoundPredicate(
++                    orPredicateWithSubpredicates: filterOrIncludedPredicates))
+             }
+ 
+             guard !accountsEnabledStates.isEmpty else {
+@@ -89,10 +102,12 @@ public struct MessageQueryResultsFilter {
+     public init(mustBeFlagged: Bool? = nil,
+                 mustBeUnread: Bool? = nil,
+                 mustContainAttachments: Bool? = nil,
++                includedMessageIDs: [MessageID] = [],
+                 accountEnabledStates: [[Account:Bool]]) {
+         self.mustBeFlagged = mustBeFlagged
+         self.mustBeUnread = mustBeUnread
+         self.mustContainAttachments = mustContainAttachments
++        self.includedMessageIDs = includedMessageIDs
+         self.accountsEnabledStates = accountEnabledStates
+     }
+ 
+@@ -116,10 +131,12 @@ public struct MessageQueryResultsFilter {
+     public init(mustBeFlagged: Bool? = nil,
+                 mustBeUnread: Bool? = nil,
+                 mustContainAttachments: Bool? = nil,
++                includedMessageIDs: [MessageID] = [],
+                 accounts: [Account]) {
+         self.mustBeFlagged = mustBeFlagged
+         self.mustBeUnread = mustBeUnread
+         self.mustContainAttachments = mustContainAttachments
++        self.includedMessageIDs = includedMessageIDs
+         var enabledStates = [[Account:Bool]]()
+         for account in accounts {
+             enabledStates.append([account:true])
+diff --git a/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewModel.swift b/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewModel.swift
+index 70ff78d..c91e65e 100644
+--- a/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewModel.swift
++++ b/pEpForiOS/UI/EmailDisplay/EmailDisplayList/EmailListViewModel.swift
+@@ -545,7 +545,25 @@ extension EmailListViewModel {
+     /// Destination VM Factory - EmailDetail VM
+     /// - returns:  EmailDetailViewModel with default configuration.
+     public func emailDetialViewModel() -> EmailDetailViewModel {
+-        let detailQueryResults = messageQueryResults.clone()
++        let detailQueryResults: MessageQueryResults
++        if let filter = messageQueryResults.filter {
++            // Opening a message marks it as seen. In an unread-filtered live
++            // query that immediately removes the displayed row and makes the
++            // next message appear in its place. Keep the list's current
++            // messages in the detail query for this carousel's lifetime.
++            let detailFilter = MessageQueryResultsFilter(
++                mustBeFlagged: filter.mustBeFlagged,
++                mustBeUnread: filter.mustBeUnread,
++                mustContainAttachments: filter.mustContainAttachments,
++                includedMessageIDs: messageQueryResults.all.map { $0.uuid },
++                accountEnabledStates: filter.accountsEnabledStates)
++            detailQueryResults = MessageQueryResults(
++                withFolder: messageQueryResults.folder,
++                filter: detailFilter,
++                search: messageQueryResults.search)
++        } else {
++            detailQueryResults = messageQueryResults.clone()
++        }
+         let createe = EmailDetailViewModel(messageQueryResults: detailQueryResults)
+         createe.selectionChangeDelegate = self
+         detailQueryResults.rowDelegate = createe
