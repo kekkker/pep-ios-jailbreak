@@ -2,32 +2,13 @@
 set -e
 
 plist=/var/jb/Library/LaunchDaemons/software.pep.notifier.plist
-poster_plist=/var/jb/Library/LaunchDaemons/software.pep.notification-poster.plist
-cache_root=/var/mobile/Library/Caches/software.pep.notifier
-queue_link="$cache_root/queue-v2"
-
-for metadata in /var/mobile/Containers/Shared/AppGroup/*/.com.apple.mobile_container_manager.metadata.plist; do
-    [ -f "$metadata" ] || continue
-    grep -a -q "group.software.pEp" "$metadata" || continue
-
-    group_root=${metadata%/.com.apple.mobile_container_manager.metadata.plist}
-    group_queue="$group_root/Library/Caches/software.pep.notifier/queue-v2"
-    mkdir -p "$group_queue" "$cache_root"
-    chown -R mobile:mobile "$group_root/Library/Caches/software.pep.notifier" "$cache_root"
-
-    if [ -L "$queue_link" ]; then
-        rm -f "$queue_link"
-    fi
-    [ -e "$queue_link" ] || ln -s "$group_queue" "$queue_link"
-    break
-done
 
 launchctl bootout user/501/software.pep.notification-poster >/dev/null 2>&1 || true
 launchctl bootout system/software.pep.notification-poster >/dev/null 2>&1 || true
 launchctl bootout user/501/software.pep.notifier >/dev/null 2>&1 || true
 launchctl bootout system/software.pep.notifier >/dev/null 2>&1 || true
-launchctl bootstrap system "$poster_plist" >/dev/null 2>&1 || true
-launchctl kickstart -k system/software.pep.notification-poster >/dev/null 2>&1 || true
+rm -f /var/jb/Library/LaunchDaemons/software.pep.notification-poster.plist
+rm -f /var/jb/usr/libexec/pep-notification-poster-launcher
 launchctl bootstrap system "$plist" >/dev/null 2>&1 || true
 launchctl kickstart -k system/software.pep.notifier >/dev/null 2>&1 || true
 

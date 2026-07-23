@@ -50,47 +50,9 @@ if [[ -z "$app" ]]; then
     exit 1
 fi
 
-sdk=$(xcrun --sdk iphoneos --show-sdk-path)
-products=$(dirname "$app")
-native_build="$repo_root/build/native-notifier"
-rm -rf "$native_build"
-mkdir -p "$native_build"
-
-# Build a tiny host executable against the exact MessageModel framework that
-# xcodebuild just embedded in pEp.app. The embedded copy has its compiler
-# modules stripped, so compile against the unstripped sibling product and load
-# the embedded copy at runtime. It contains no IMAP implementation.
-if [[ ! -d "$products/MessageModel.framework/Modules/MessageModel.swiftmodule" ]]; then
-    echo "Unstripped MessageModel compiler module was not produced" >&2
-    exit 1
-fi
-xcrun --sdk iphoneos swiftc \
-    -target arm64-apple-ios16.0 \
-    -sdk "$sdk" \
-    -I "$products" \
-    -F "$products" \
-    -Xcc -I"$work_root/pEpForiOS.XCFrameworks/pEpEngine/build-mac/include" \
-    "$repo_root/notifier/pep-native-notifier.swift" \
-    -framework MessageModel \
-    -Xlinker -rpath \
-    -Xlinker @executable_path/Frameworks \
-    -o "$app/pEpNativeNotifier"
-xcrun --sdk iphoneos clang \
-    -fobjc-arc \
-    -target arm64-apple-ios16.0 \
-    -isysroot "$sdk" \
-    -framework Foundation \
-    -framework UserNotifications \
-    "$repo_root/notifier/pep-notification-poster.m" \
-    -o "$app/pEpNotificationPoster"
-
-# TrollStore preserves entitlements already present on an ldid-fakesigned
-# executable. The application stores its Core Data database in this app-group
-# container and aborts at launch when the entitlement is absent.
-ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
-    "$app/pEpNativeNotifier"
-ldid -S"$repo_root/signing/pEp-notifier.entitlements" \
-    "$app/pEpNotificationPoster"
+# The launch daemon executes this exact application binary with
+# PEP_HEADLESS_NOTIFIER=1. Both UI and headless mail modes therefore use the
+# real software.pEp.mail identity and UNUserNotificationCenter.current().
 ldid -S"$repo_root/signing/pEp-trollstore.entitlements" \
     "$app/$(defaults read "$app/Info" CFBundleExecutable)"
 
@@ -113,30 +75,22 @@ cp "$repo_root/notifier/postinst" "$package/DEBIAN/postinst"
 cp "$repo_root/notifier/prerm" "$package/DEBIAN/prerm"
 cp "$repo_root/notifier/pep-native-notifier-launcher" \
     "$package/var/jb/usr/libexec/"
-cp "$repo_root/notifier/pep-notification-poster-launcher" \
-    "$package/var/jb/usr/libexec/"
 cp "$repo_root/notifier/software.pep.notifier.plist" \
-    "$package/var/jb/Library/LaunchDaemons/"
-cp "$repo_root/notifier/software.pep.notification-poster.plist" \
     "$package/var/jb/Library/LaunchDaemons/"
 
 chmod 755 \
     "$package/DEBIAN/postinst" \
     "$package/DEBIAN/prerm" \
-    "$package/var/jb/usr/libexec/pep-native-notifier-launcher" \
-    "$package/var/jb/usr/libexec/pep-notification-poster-launcher"
+    "$package/var/jb/usr/libexec/pep-native-notifier-launcher"
 chmod 644 \
     "$package/DEBIAN/control" \
-    "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist" \
-    "$package/var/jb/Library/LaunchDaemons/software.pep.notification-poster.plist"
+    "$package/var/jb/Library/LaunchDaemons/software.pep.notifier.plist"
 
 dpkg-deb --root-owner-group --build "$package" \
-    "$artifacts/software.pep.notifier_1.0.9_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.1.0_iphoneos-arm64.deb"
 
 file "$app/$(defaults read "$app/Info" CFBundleExecutable)"
-file "$app/pEpNativeNotifier"
-file "$app/pEpNotificationPoster"
 codesign -d --entitlements :- "$app" 2>/dev/null || true
 ls -lh \
     "$artifacts/pEp-iOS16-trollstore.ipa" \
-    "$artifacts/software.pep.notifier_1.0.9_iphoneos-arm64.deb"
+    "$artifacts/software.pep.notifier_1.1.0_iphoneos-arm64.deb"
